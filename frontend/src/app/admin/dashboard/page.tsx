@@ -1,180 +1,141 @@
 "use client";
 
 import React from "react";
-import Link from "next/link";
 
 export default function AdminDashboardPage() {
-  const pendingActions = [
-    {
-      id: "REQ-009",
-      target: "Batik Cantik Makmur",
-      type: "Verifikasi Toko",
-      date: "19 Juni 2026",
-      desc: "Menunggu verifikasi NIB dan KTP Pemilik",
-      status: "Tertunda"
-    },
-    {
-      id: "REQ-008",
-      target: "Keripik Singkong Renyah",
-      type: "Verifikasi Toko",
-      date: "19 Juni 2026",
-      desc: "NIB terunggah, menunggu persetujuan admin",
-      status: "Tertunda"
-    },
-    {
-      id: "REPORT-02",
-      target: "Solo Jaya Batik",
-      type: "Laporan Pelanggaran",
-      date: "18 Juni 2026",
-      desc: "Laporan barang palsu/hak cipta batik tulis",
-      status: "Perlu Review"
-    }
-  ];
-
-  const recentStores = [
-    { name: "Toko Craft Nusantara", owner: "Adi Wijaya", category: "Kerajinan", status: "Aktif", date: "18 Jun 2026" },
-    { name: "Batik Sogan Solo", owner: "Sri Rahmi", category: "Fashion", status: "Aktif", date: "17 Jun 2026" },
-    { name: "Sambal Bu Rudi", owner: "Rudi Hartono", category: "Kuliner", status: "Aktif", date: "17 Jun 2026" }
-  ];
-
   return (
     <div className="space-y-8">
-      {/* Welcome & Time Header */}
-      <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h2 className="font-headline text-3xl font-bold text-on-surface">Dashboard Superadmin</h2>
-          <p className="font-body text-body-md text-secondary mt-1">
-            Ringkasan data, verifikasi registrasi UMKM, dan transaksi di seluruh ekosistem Pelataran UMKM.
-          </p>
-        </div>
+      {/* Header */}
+      <header>
+        <h2 className="font-headline text-3xl font-bold text-[#1F1B18]">Dashboard</h2>
+        <p className="font-body text-body-md text-[#8E8680] mt-1">
+          Ringkasan performa platform Pelataran UMKM hari ini.
+        </p>
       </header>
 
-      {/* Metrics Row */}
-      <section className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white border border-surface-container p-6 rounded-xl flex items-center justify-between shadow-sm">
-          <div className="space-y-1">
-            <p className="text-[10px] uppercase font-bold text-secondary tracking-wider">Total Transaksi (Bulan Ini)</p>
-            <h3 className="font-headline text-lg font-extrabold text-on-surface">Rp 148.920.000</h3>
-            <p className="text-[10px] text-green-600 font-bold flex items-center gap-0.5">
-              <span className="material-symbols-outlined text-xs">trending_up</span> +18.4% bln lalu
-            </p>
-          </div>
-          <div className="w-10 h-10 rounded-lg bg-orange-50 flex items-center justify-center text-primary">
-            <span className="material-symbols-outlined text-xl">payments</span>
+      {/* 4 Stats Cards Grid */}
+      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* Card 1: Total UMKM Terdaftar */}
+        <div className="bg-white border border-[#EAE5E0] p-6 rounded-xl flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-lg bg-[#FFF3ED] flex items-center justify-center text-[#E8600A] flex-shrink-0">
+              <span className="material-symbols-outlined text-2xl">groups</span>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase font-bold text-[#8E8680] tracking-wider">Total UMKM Terdaftar</p>
+              <div className="flex items-center gap-2 mt-1">
+                <h3 className="font-headline text-2xl font-extrabold text-[#1F1B18] leading-none">24,512</h3>
+                <span className="flex items-center text-[10px] text-green-600 bg-green-50 px-1.5 py-0.5 rounded font-bold">
+                  <span className="material-symbols-outlined text-[10px] font-bold">trending_up</span>
+                  12%
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
-        <Link href="/admin/stores" className="bg-white border border-surface-container p-6 rounded-xl flex items-center justify-between shadow-sm hover:shadow-md transition">
-          <div className="space-y-1">
-            <p className="text-[10px] uppercase font-bold text-secondary tracking-wider">Toko Terdaftar</p>
-            <h3 className="font-headline text-lg font-extrabold text-on-surface">1,240 Toko</h3>
-            <p className="text-[10px] text-green-600 font-bold flex items-center gap-0.5">
-              <span className="material-symbols-outlined text-xs">add</span> 24 Toko baru minggu ini
-            </p>
+        {/* Card 2: Produk Aktif */}
+        <div className="bg-white border border-[#EAE5E0] p-6 rounded-xl flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-lg bg-[#F5F3F0] flex items-center justify-center text-[#5C5550] flex-shrink-0">
+              <span className="material-symbols-outlined text-2xl">inventory_2</span>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase font-bold text-[#8E8680] tracking-wider">Produk Aktif</p>
+              <div className="flex items-center gap-2 mt-1">
+                <h3 className="font-headline text-2xl font-extrabold text-[#1F1B18] leading-none">142,082</h3>
+                <span className="flex items-center text-[10px] text-green-600 bg-green-50 px-1.5 py-0.5 rounded font-bold">
+                  <span className="material-symbols-outlined text-[10px] font-bold">trending_up</span>
+                  8%
+                </span>
+              </div>
+            </div>
           </div>
-          <div className="w-10 h-10 rounded-lg bg-zinc-50 flex items-center justify-center text-secondary">
-            <span className="material-symbols-outlined text-xl">storefront</span>
-          </div>
-        </Link>
+        </div>
 
-        <Link href="/admin/verification" className="bg-white border border-surface-container p-6 rounded-xl flex items-center justify-between shadow-sm hover:shadow-md transition">
-          <div className="space-y-1">
-            <p className="text-[10px] uppercase font-bold text-secondary tracking-wider">Pending Verifikasi</p>
-            <h3 className="font-headline text-lg font-extrabold text-red-600">8 Toko</h3>
-            <p className="text-[10px] text-red-600 font-bold">Harus segera direview</p>
+        {/* Card 3: Total Transaksi */}
+        <div className="bg-white border border-[#EAE5E0] p-6 rounded-xl flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-lg bg-[#F5F3F0] flex items-center justify-center text-[#5C5550] flex-shrink-0">
+              <span className="material-symbols-outlined text-2xl">payments</span>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase font-bold text-[#8E8680] tracking-wider">Total Transaksi</p>
+              <div className="flex items-center gap-2 mt-1">
+                <h3 className="font-headline text-2xl font-extrabold text-[#1F1B18] leading-none">Rp 4.2B</h3>
+                <span className="flex items-center text-[10px] text-green-600 bg-green-50 px-1.5 py-0.5 rounded font-bold">
+                  <span className="material-symbols-outlined text-[10px] font-bold">trending_up</span>
+                  15.4%
+                </span>
+              </div>
+            </div>
           </div>
-          <div className="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center text-red-600">
-            <span className="material-symbols-outlined text-xl">verified_user</span>
-          </div>
-        </Link>
+        </div>
 
-        <div className="bg-white border border-surface-container p-6 rounded-xl flex items-center justify-between shadow-sm">
-          <div className="space-y-1">
-            <p className="text-[10px] uppercase font-bold text-secondary tracking-wider">Total Produk Aktif</p>
-            <h3 className="font-headline text-lg font-extrabold text-on-surface">14,890 Item</h3>
-            <p className="text-[10px] text-secondary font-semibold">Tersedia di pasar digital</p>
-          </div>
-          <div className="w-10 h-10 rounded-lg bg-zinc-50 flex items-center justify-center text-secondary">
-            <span className="material-symbols-outlined text-xl">inventory_2</span>
+        {/* Card 4: Antrian Verifikasi */}
+        <div className="bg-white border border-[#EAE5E0] p-6 rounded-xl flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-lg bg-[#FFF3ED] flex items-center justify-center text-[#E8600A] flex-shrink-0">
+              <span className="material-symbols-outlined text-2xl">assignment_turned_in</span>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase font-bold text-[#8E8680] tracking-wider">Antrian Verifikasi</p>
+              <h3 className="font-headline text-2xl font-extrabold text-[#1F1B18] mt-1 leading-none">184 Toko</h3>
+              <p className="text-[9px] text-[#E8600A] font-bold mt-1">24 Pending</p>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* Main Grid: Pending Verifications vs Quick Stats */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Left 2 Columns: Pending Verifications list */}
-        <section className="lg:col-span-2 space-y-6">
-          <div className="bg-white border border-surface-container rounded-xl shadow-sm">
-            <div className="p-6 border-b border-surface-container flex justify-between items-center">
-              <div>
-                <h4 className="font-headline font-bold text-lg text-on-surface">Antrian Tindakan Admin</h4>
-                <p className="text-xs text-secondary mt-0.5">Daftar permohonan verifikasi toko dan aduan pelanggaran produk.</p>
-              </div>
-              <Link href="/admin/verification" className="text-primary font-bold text-xs hover:underline">Lihat Semua</Link>
-            </div>
-            
-            <div className="divide-y divide-surface-container">
-              {pendingActions.map((action, idx) => (
-                <div key={idx} className="p-6 flex flex-col sm:flex-row justify-between sm:items-center gap-4 hover:bg-surface-container-low/30 transition">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-xs bg-surface-container text-[#ff6f00] px-2 py-0.5 rounded border border-surface-container-high">{action.type}</span>
-                      <span className="text-xs text-secondary">•</span>
-                      <span className="text-xs font-semibold text-secondary">{action.date}</span>
-                    </div>
-                    <p className="text-sm font-semibold text-on-surface">Toko: {action.target}</p>
-                    <p className="text-xs text-secondary">{action.desc}</p>
-                  </div>
-                  
-                  <div className="flex sm:flex-col items-start sm:items-end justify-between sm:justify-center gap-2">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${action.status === "Perlu Review" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-red-50 text-red-700 border-red-200"}`}>{action.status}</span>
-                    <Link 
-                      href="/admin/verification"
-                      className="px-3 py-1 bg-[#ff6f00] text-white font-bold text-[11px] rounded hover:brightness-95 transition"
-                    >
-                      Proses
-                    </Link>
-                  </div>
-                </div>
-              ))}
-            </div>
+      {/* Transaction Growth Chart Section */}
+      <section className="bg-white border border-[#EAE5E0] rounded-xl p-6 shadow-sm space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <h3 className="font-headline text-lg font-bold text-[#1F1B18]">Grafik Pertumbuhan Transaksi</h3>
+            <p className="text-xs text-[#8E8680] mt-0.5">Data akumulasi transaksi UMKM periode 2024</p>
           </div>
-        </section>
-
-        {/* Right 1 Column: Shortcut Tools & Activity Feed */}
-        <section className="space-y-6">
-          <div className="bg-white border border-surface-container p-6 rounded-xl shadow-sm space-y-4">
-            <h4 className="font-headline font-bold text-lg text-on-surface">Toko Baru Mendaftar</h4>
-            <div className="space-y-4">
-              {recentStores.map((store, idx) => (
-                <div key={idx} className="flex justify-between items-center text-xs">
-                  <div className="space-y-0.5">
-                    <p className="font-bold text-on-surface">{store.name}</p>
-                    <p className="text-secondary">Owner: {store.owner} • {store.category}</p>
-                  </div>
-                  <span className="text-[10px] text-secondary font-bold">{store.date}</span>
-                </div>
-              ))}
-            </div>
+          <div>
+            <button className="flex items-center gap-2 px-4 py-2 border border-[#EAE5E0] text-[#5C5550] font-semibold text-xs rounded hover:bg-[#F5F3F0] transition">
+              <span>Bulanan</span>
+              <span className="material-symbols-outlined text-sm">expand_more</span>
+            </button>
           </div>
+        </div>
 
-          <div className="bg-white border border-surface-container p-6 rounded-xl shadow-sm space-y-4">
-            <h4 className="font-headline font-bold text-lg text-on-surface">Bantuan Cepat</h4>
-            <div className="grid grid-cols-2 gap-3 text-center">
-              <Link href="/admin/stores" className="p-4 border border-surface-container rounded-lg hover:bg-surface-container-low hover:border-primary-container/20 transition flex flex-col items-center justify-center gap-2">
-                <span className="material-symbols-outlined text-xl text-primary">storefront</span>
-                <span className="text-xs font-bold text-on-surface">Kelola Toko</span>
-              </Link>
-              <Link href="/admin/transactions" className="p-4 border border-surface-container rounded-lg hover:bg-surface-container-low hover:border-primary-container/20 transition flex flex-col items-center justify-center gap-2">
-                <span className="material-symbols-outlined text-xl text-secondary">receipt_long</span>
-                <span className="text-xs font-bold text-on-surface">Cek Keuangan</span>
-              </Link>
-            </div>
-          </div>
-        </section>
+        {/* Custom SVG Chart Area */}
+        <div className="relative w-full h-[300px]">
+          <svg className="w-full h-full" viewBox="0 0 800 300" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#E8600A" stopOpacity="0.4" />
+                <stop offset="100%" stopColor="#E8600A" stopOpacity="0.0" />
+              </linearGradient>
+            </defs>
 
-      </div>
+            {/* Grid lines */}
+            <line x1="0" y1="50" x2="800" y2="50" stroke="#F5F3F0" strokeWidth="1" />
+            <line x1="0" y1="110" x2="800" y2="110" stroke="#F5F3F0" strokeWidth="1" />
+            <line x1="0" y1="170" x2="800" y2="170" stroke="#F5F3F0" strokeWidth="1" />
+            <line x1="0" y1="230" x2="800" y2="230" stroke="#F5F3F0" strokeWidth="1" />
+            <line x1="0" y1="290" x2="800" y2="290" stroke="#F5F3F0" strokeWidth="1" />
+
+            {/* Smooth Spline Curve Area */}
+            <path
+              d="M 0 280 C 100 240, 150 270, 220 220 C 290 170, 310 240, 360 210 C 410 180, 450 120, 520 230 C 590 320, 620 180, 680 140 C 740 100, 760 180, 800 270 L 800 300 L 0 300 Z"
+              fill="url(#chartGradient)"
+            />
+
+            {/* Smooth Spline Curve Line */}
+            <path
+              d="M 0 280 C 100 240, 150 270, 220 220 C 290 170, 310 240, 360 210 C 410 180, 450 120, 520 230 C 590 320, 620 180, 680 140 C 740 100, 760 180, 800 270"
+              fill="none"
+              stroke="#E8600A"
+              strokeWidth="3"
+              strokeLinecap="round"
+            />
+          </svg>
+        </div>
+      </section>
     </div>
   );
 }
