@@ -16,8 +16,20 @@ const HELP_LINKS = [
   { label: "FAQ", href: "/faq" },
 ];
 
-export default function Footer() {
+interface FooterProps {
+  isMinimalist?: boolean;
+}
+
+export default function Footer({ isMinimalist = false }: FooterProps) {
   const [email, setEmail] = useState("");
+
+  if (isMinimalist) {
+    return (
+      <footer style={{ textAlign: "center", padding: "20px 0", fontSize: "0.75rem", color: "#8E8680", borderTop: "1px solid #EAE5E0", background: "white" }}>
+        © 2026 Pelataran UMKM Digital. Supporting local businesses.
+      </footer>
+    );
+  }
 
   return (
     <footer className="footer-light-custom">

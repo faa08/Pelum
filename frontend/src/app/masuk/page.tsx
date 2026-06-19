@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 
 import Navbar from "@/components/Navbar";
@@ -19,6 +20,7 @@ const C = {
 };
 
 export default function LoginPage() {
+  const router = useRouter();
   const [showPass, setShowPass] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -92,7 +94,16 @@ export default function LoginPage() {
             <h1 style={{ fontSize: "1.625rem", fontWeight: 800, color: C.text, margin: "0 0 6px 0" }}>Selamat Datang Kembali</h1>
             <p style={{ fontSize: "0.875rem", color: C.textMuted, margin: "0 0 32px 0" }}>Silakan masukkan detail akun Anda untuk masuk.</p>
 
-            <form onSubmit={(e) => e.preventDefault()} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              if (email.toLowerCase().includes("admin")) {
+                router.push("/admin/dashboard");
+              } else if (email.toLowerCase().includes("seller")) {
+                router.push("/seller/dashboard");
+              } else {
+                router.push("/account/profile");
+              }
+            }} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
               {/* Email */}
               <div>
