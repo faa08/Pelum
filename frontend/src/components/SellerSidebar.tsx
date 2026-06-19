@@ -17,7 +17,7 @@ export default function SellerSidebar() {
   ];
 
   return (
-    <aside className="fixed left-0 top-0 h-screen w-72 bg-surface-container-lowest border-r border-surface-container flex flex-col py-8 px-4 z-40">
+    <aside className="fixed left-0 top-0 h-screen w-72 bg-surface-container-lowest border-r border-surface-container flex flex-col py-8 px-4 z-40 overflow-y-auto">
       {/* Merchant Header */}
       <Link href="/" className="mb-8 px-4 flex items-center gap-3 hover:opacity-90 transition">
         <div className="w-10 h-10 bg-primary-container/10 border border-primary-container/20 rounded flex items-center justify-center text-primary font-bold">
