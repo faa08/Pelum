@@ -132,36 +132,36 @@ export default function Navbar() {
           </Link>
 
           {/* Notification Button and Dropdown Card */}
-          <div className="notif-container" ref={containerRef}>
+          <div className="relative inline-block" ref={containerRef}>
             <button 
-              className="nav-bell-btn" 
+              className="relative flex items-center justify-center p-1 text-[#E8600A] hover:text-[#C24E08] transition-colors" 
               id="notif-btn" 
               title="Notifikasi"
               onClick={() => setIsOpen(!isOpen)}
               aria-expanded={isOpen}
             >
-              <Bell size={18} className="nav-icon-orange" />
+              <Bell size={18} />
               {unreadCount > 0 && (
-                <span className="notif-badge-count">{unreadCount}</span>
+                <span className="absolute -top-1 -right-1 bg-[#E8600A] text-white text-[10px] font-extrabold min-w-[16px] h-4 rounded-full flex items-center justify-center px-1 border border-white shadow-[0_1px_3px_rgba(0,0,0,0.15)] pointer-events-none">{unreadCount}</span>
               )}
             </button>
 
             {/* Notification Dropdown Panel */}
             {isOpen && (
-              <div className="notif-dropdown">
-                <div className="notif-header">
-                  <span className="notif-title">Notifikasi</span>
-                  <div className="notif-header-actions">
+              <div className="absolute top-[calc(100%+14px)] right-[-60px] w-[380px] bg-white border border-neutral-200 rounded-xl shadow-xl z-50 overflow-hidden flex flex-col">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100 bg-[#FCFCFA]">
+                  <span className="text-[15px] font-extrabold text-neutral-800">Notifikasi</span>
+                  <div className="flex items-center gap-3">
                     {notifications.length > 0 && (
                       <>
                         <button 
-                          className="notif-btn-action" 
+                          className="text-[12px] font-bold text-[#E8600A] hover:text-[#C24E08] transition-colors bg-transparent border-none cursor-pointer" 
                           onClick={handleMarkAllRead}
                         >
                           Tandai semua dibaca
                         </button>
                         <button 
-                          className="notif-btn-action notif-btn-action-danger" 
+                          className="text-neutral-400 hover:text-red-600 transition-colors bg-transparent border-none cursor-pointer" 
                           onClick={handleClearAll}
                           title="Hapus semua"
                         >
@@ -172,34 +172,38 @@ export default function Navbar() {
                   </div>
                 </div>
 
-                <div className="notif-list">
+                <div className="max-h-[380px] overflow-y-auto divide-y divide-neutral-100">
                   {notifications.length > 0 ? (
                     notifications.map((notif) => (
                       <div
                         key={notif.id}
-                        className={`notif-item ${notif.unread ? "unread" : ""}`}
+                        className={`flex gap-3.5 px-5 py-4 cursor-pointer hover:bg-neutral-50 transition-colors text-left w-full relative ${notif.unread ? "bg-[#FFF9F5] hover:bg-[#FFF3EA]" : ""}`}
                         onClick={() => handleToggleRead(notif.id)}
                       >
-                        <div className={`notif-icon-box ${notif.type}`}>
+                        <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
+                          notif.type === "offer" ? "bg-[#FFF3ED] text-[#E8600A]" :
+                          notif.type === "accepted" ? "bg-emerald-50 text-emerald-700" :
+                          "bg-blue-50 text-blue-700"
+                        }`}>
                           {renderNotifIcon(notif.type)}
                         </div>
-                        <div className="notif-content">
-                          <p className="notif-text">{notif.text}</p>
-                          <span className="notif-time">{notif.time}</span>
+                        <div className="flex-1 flex flex-col gap-1">
+                          <p className={`text-[13px] leading-relaxed text-neutral-600 ${notif.unread ? "font-bold text-neutral-800" : ""}`}>{notif.text}</p>
+                          <span className="text-[11px] text-neutral-400">{notif.time}</span>
                         </div>
                         {notif.unread && (
-                          <div className="notif-unread-indicator" />
+                          <div className="w-2 h-2 bg-[#E8600A] rounded-full self-center shrink-0 shadow-[0_0_0_2px_#FFF9F5]" />
                         )}
                       </div>
                     ))
                   ) : (
-                    <div className="notif-empty">
-                      <BellOff size={36} className="notif-empty-icon" />
-                      <h4 className="notif-empty-title">Tidak ada notif</h4>
-                      <p className="notif-empty-desc">
+                    <div className="py-11 px-6 flex flex-col items-center justify-center text-center">
+                      <BellOff size={36} className="text-neutral-400 opacity-60 mb-3" />
+                      <h4 className="text-sm font-extrabold text-neutral-800 mb-1">Tidak ada notif</h4>
+                      <p className="text-xs text-neutral-400 max-w-[240px] leading-relaxed">
                         Semua notifikasi baru akan muncul di sini.
                       </p>
-                      <button className="notif-empty-reset" onClick={handleReset}>
+                      <button className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold text-[#E8600A] px-3 py-1.5 border border-dashed border-[#E8600A] rounded hover:bg-[#FFF3ED] hover:border-solid transition-all cursor-pointer bg-white" onClick={handleReset}>
                         <RotateCcw size={12} />
                         <span>Simulasikan Notifikasi</span>
                       </button>
