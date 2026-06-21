@@ -225,6 +225,7 @@ export default function RegisterPage() {
               {/* Google */}
               <button
                 type="button"
+                onClick={() => authService.loginWithGoogle()}
                 style={{
                   width: "100%", height: 46, border: `1.5px solid ${C.borderStrong}`, borderRadius: 8,
                   background: "white", fontSize: "0.875rem", fontWeight: 600, color: C.text,

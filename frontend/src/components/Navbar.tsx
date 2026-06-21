@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { 
   Bell, 
   ShoppingCart, 
@@ -16,6 +17,7 @@ import {
   Briefcase,
   LogOut 
 } from "lucide-react";
+import { authService } from "@/backend/authService";
 
 interface Notification {
   id: string;
@@ -64,11 +66,13 @@ const INITIAL_NOTIFICATIONS: Notification[] = [
 ];
 
 export default function Navbar({ searchQuery, setSearchQuery }: { searchQuery?: string; setSearchQuery?: (q: string) => void }) {
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>(INITIAL_NOTIFICATIONS);
   const [isMobile, setIsMobile] = useState(false);
-  
+  const [currentUser, setCurrentUser] = useState<ReturnType<typeof authService.getCurrentUser>>(null);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const profileContainerRef = useRef<HTMLDivElement>(null);
 
@@ -79,6 +83,14 @@ export default function Navbar({ searchQuery, setSearchQuery }: { searchQuery?: 
     handleResize();
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // Sync current user on mount and on storage changes (login/logout in other tabs)
+  useEffect(() => {
+    setCurrentUser(authService.getCurrentUser());
+    const handleStorage = () => setCurrentUser(authService.getCurrentUser());
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
   useEffect(() => {
@@ -115,6 +127,13 @@ export default function Navbar({ searchQuery, setSearchQuery }: { searchQuery?: 
 
   const handleReset = () => {
     setNotifications(INITIAL_NOTIFICATIONS);
+  };
+
+  const handleLogout = () => {
+    authService.logout();
+    setCurrentUser(null);
+    setIsProfileOpen(false);
+    router.push("/");
   };
 
   const renderNotifIcon = (type: Notification["type"]) => {
@@ -236,81 +255,98 @@ export default function Navbar({ searchQuery, setSearchQuery }: { searchQuery?: 
 
           <div className="nav-separator" />
 
-          <Link href="/daftar" className="nav-auth-link" id="register-btn">
-            Daftar
-          </Link>
-          <Link href="/masuk" className="nav-auth-link" id="login-btn">
-            Login
-          </Link>
-
-          <div className="nav-profile-avatar relative" ref={profileContainerRef}>
-            <button 
-              className="avatar-circle" 
-              onClick={() => setIsProfileOpen(!isProfileOpen)}
-              aria-expanded={isProfileOpen}
-            >
-              <User size={18} className="text-[#4C1D95] fill-[#4C1D95]" />
-            </button>
-            {isProfileOpen && !isMobile && (
-              <div className="absolute top-[calc(100%+14px)] right-0 w-[290px] bg-white border border-[#EAE5E0] rounded-2xl shadow-xl z-50 overflow-hidden flex flex-col py-3 px-3 text-[#1F1B18] normal-case tracking-normal">
-                {/* Profile Info Header */}
-                <div className="flex items-center justify-between pb-3 mb-2 border-b border-gray-100 px-1">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center text-white text-lg font-bold">
-                      <User className="w-5 h-5 fill-white text-white" />
-                    </div>
-                    <div className="flex flex-col text-left">
-                      <span className="text-sm font-bold leading-tight">57w3eiqd</span>
-                      <span className="text-[11px] text-gray-400">@57w3eiqd</span>
-                    </div>
+          {currentUser ? (
+            /* ── Logged-in: avatar + profile dropdown ── */
+            <div className="nav-profile-avatar relative" ref={profileContainerRef}>
+              <button
+                className="avatar-circle flex items-center gap-2 px-2"
+                onClick={() => setIsProfileOpen(!isProfileOpen)}
+                aria-expanded={isProfileOpen}
+              >
+                {currentUser.avatar ? (
+                  <img src={currentUser.avatar} alt="avatar" className="w-8 h-8 rounded-full object-cover border border-surface-container" />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white text-sm font-bold">
+                    {(currentUser.nama_lengkap || currentUser.username || "U").charAt(0).toUpperCase()}
                   </div>
-                  <Link 
-                    href="/account/profile"
-                    onClick={() => setIsProfileOpen(false)}
-                    className="px-3.5 py-1.5 bg-[#F5F3F0] hover:bg-[#EBE8E2] transition-colors rounded-full text-xs font-semibold text-gray-700"
-                  >
-                    Profil Saya
-                  </Link>
+                )}
+                <span className="text-sm font-semibold text-on-surface hidden sm:block max-w-[120px] truncate">
+                  {currentUser.nama_lengkap || currentUser.username}
+                </span>
+              </button>
+
+              {isProfileOpen && !isMobile && (
+                <div className="absolute top-[calc(100%+14px)] right-0 w-[290px] bg-white border border-[#EAE5E0] rounded-2xl shadow-xl z-50 overflow-hidden flex flex-col py-3 px-3 text-[#1F1B18] normal-case tracking-normal">
+                  {/* Profile Info Header */}
+                  <div className="flex items-center justify-between pb-3 mb-2 border-b border-gray-100 px-1">
+                    <div className="flex items-center gap-3">
+                      {currentUser.avatar ? (
+                        <img src={currentUser.avatar} alt="avatar" className="w-10 h-10 rounded-full object-cover" />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-white text-lg font-bold">
+                          {(currentUser.nama_lengkap || currentUser.username || "U").charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="flex flex-col text-left">
+                        <span className="text-sm font-bold leading-tight">{currentUser.nama_lengkap || currentUser.username}</span>
+                        <span className="text-[11px] text-gray-400">@{currentUser.username}</span>
+                      </div>
+                    </div>
+                    <Link
+                      href="/account/profile"
+                      onClick={() => setIsProfileOpen(false)}
+                      className="px-3.5 py-1.5 bg-[#F5F3F0] hover:bg-[#EBE8E2] transition-colors rounded-full text-xs font-semibold text-gray-700"
+                    >
+                      Profil Saya
+                    </Link>
+                  </div>
+
+                  {/* Dropdown Items */}
+                  <div className="flex flex-col gap-0.5 text-left font-body">
+                    <Link
+                      href="/promo"
+                      onClick={() => setIsProfileOpen(false)}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                      <Ticket className="w-4 h-4 text-gray-400" />
+                      <span>Kupon dan Diskon</span>
+                    </Link>
+
+                    <Link
+                      href="/account/seller"
+                      onClick={() => setIsProfileOpen(false)}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                      <Briefcase className="w-4 h-4 text-gray-400" />
+                      <span>Daftar menjadi Seller</span>
+                    </Link>
+
+                    <button
+                      onClick={handleLogout}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors text-left w-full mt-1 border-t border-gray-100 pt-3"
+                    >
+                      <LogOut className="w-4 h-4 text-red-500" />
+                      <span>Logout</span>
+                    </button>
+                  </div>
                 </div>
-
-                {/* Dropdown Items */}
-                <div className="flex flex-col gap-0.5 text-left font-body">
-                  <Link
-                    href="/promo"
-                    onClick={() => setIsProfileOpen(false)}
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
-                  >
-                    <Ticket className="w-4 h-4 text-gray-400" />
-                    <span>Kupon dan Diskon</span>
-                  </Link>
-
-                  <Link
-                    href="/account/seller"
-                    onClick={() => setIsProfileOpen(false)}
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
-                  >
-                    <Briefcase className="w-4 h-4 text-gray-400" />
-                    <span>Daftar menjadi Seller</span>
-                  </Link>
-
-                  <button
-                    onClick={() => {
-                      setIsProfileOpen(false);
-                      alert("Anda telah logout.");
-                    }}
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors text-left w-full mt-1 border-t border-gray-100 pt-3"
-                  >
-                    <LogOut className="w-4 h-4 text-red-500" />
-                    <span>Logout</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          ) : (
+            /* ── Guest: Daftar + Login ── */
+            <>
+              <Link href="/daftar" className="nav-auth-link" id="register-btn">
+                Daftar
+              </Link>
+              <Link href="/masuk" className="nav-auth-link" id="login-btn">
+                Login
+              </Link>
+            </>
+          )}
         </div>
       </div>
-      {/* Mobile Bottom Sheet */}
-      {isProfileOpen && isMobile && (
+      {/* Mobile Bottom Sheet — only shown when logged in */}
+      {isProfileOpen && isMobile && currentUser && (
         <div style={{
           position: "fixed",
           inset: 0,
@@ -350,12 +386,16 @@ export default function Navbar({ searchQuery, setSearchQuery }: { searchQuery?: 
 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1.5px solid #F5F3F0", paddingBottom: 16, marginBottom: 16 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#4C1D95", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: "1.1rem", fontWeight: 800 }}>
-                  S
-                </div>
+                {currentUser.avatar ? (
+                  <img src={currentUser.avatar} alt="avatar" style={{ width: 44, height: 44, borderRadius: "50%", objectFit: "cover" }} />
+                ) : (
+                  <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#4C1D95", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: "1.1rem", fontWeight: 800 }}>
+                    {(currentUser.nama_lengkap || currentUser.username || "U").charAt(0).toUpperCase()}
+                  </div>
+                )}
                 <div style={{ display: "flex", flexDirection: "column", textAlign: "left" }}>
-                  <span style={{ fontSize: "0.9375rem", fontWeight: 800, color: "#1F1B18" }}>57w3eiqd</span>
-                  <span style={{ fontSize: "0.75rem", color: "#8E8680" }}>@57w3eiqd</span>
+                  <span style={{ fontSize: "0.9375rem", fontWeight: 800, color: "#1F1B18" }}>{currentUser.nama_lengkap || currentUser.username}</span>
+                  <span style={{ fontSize: "0.75rem", color: "#8E8680" }}>@{currentUser.username}</span>
                 </div>
               </div>
               <Link 
@@ -398,10 +438,7 @@ export default function Navbar({ searchQuery, setSearchQuery }: { searchQuery?: 
               </Link>
 
               <button
-                onClick={() => {
-                  setIsProfileOpen(false);
-                  alert("Anda telah logout.");
-                }}
+                onClick={handleLogout}
                 style={{
                   display: "flex", alignItems: "center", gap: 14, padding: "14px 16px",
                   background: "none", border: "none", borderTop: "1.5px solid #F5F3F0",

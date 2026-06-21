@@ -11,6 +11,13 @@ export interface User {
   created_at: string;
 }
 
+export interface ProfileUpdate {
+  nama_lengkap?: string;
+  no_telp?: string;
+  username?: string;
+  avatar?: string;
+}
+
 const isPlaceholder = () => {
   return !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder");
 };
@@ -166,11 +173,18 @@ export const authService = {
     }
   },
 
-  async updateProfile(id_user: string, nama_lengkap: string, no_telp: string): Promise<boolean> {
+  async updateProfile(id_user: string, nama_lengkap: string, no_telp: string, extra?: ProfileUpdate): Promise<boolean> {
     const currentUser = this.getCurrentUser();
     if (!currentUser) return false;
 
-    const updatedUser = { ...currentUser, nama_lengkap, no_telp };
+    // Merge all fields that can be updated
+    const fields: ProfileUpdate = {
+      nama_lengkap,
+      no_telp,
+      ...extra,
+    };
+
+    const updatedUser: User = { ...currentUser, ...fields };
     this.setCurrentUser(updatedUser);
 
     if (isPlaceholder()) {
@@ -187,9 +201,16 @@ export const authService = {
     }
 
     try {
+      // Build only non-undefined fields to avoid overwriting with null
+      const supabaseFields: Record<string, string> = {};
+      if (fields.nama_lengkap !== undefined) supabaseFields.nama_lengkap = fields.nama_lengkap;
+      if (fields.no_telp !== undefined)      supabaseFields.no_telp      = fields.no_telp;
+      if (fields.username !== undefined)     supabaseFields.username     = fields.username;
+      if (fields.avatar !== undefined)       supabaseFields.avatar       = fields.avatar;
+
       const { error } = await supabase
         .from("users")
-        .update({ nama_lengkap, no_telp })
+        .update(supabaseFields)
         .eq("id_user", id_user);
 
       if (error) {

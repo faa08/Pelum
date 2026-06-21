@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 
 import Navbar from "@/components/Navbar";
@@ -21,12 +21,20 @@ const C = {
   textMuted: "#8E8680",
 };
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [showPass, setShowPass] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    const err = searchParams.get("error");
+    if (err === "oauth_failed") setErrorMsg("Login Google gagal. Silakan coba lagi.");
+    if (err === "no_supabase") setErrorMsg("Login Google tidak tersedia pada mode lokal.");
+  }, [searchParams]);
 
   return (
     <div style={{ minHeight: "100vh", background: "#F0EDEA", display: "flex", flexDirection: "column" }}>
@@ -94,7 +102,13 @@ export default function LoginPage() {
             justifyContent: "center",
           }}>
             <h1 style={{ fontSize: "1.625rem", fontWeight: 800, color: C.text, margin: "0 0 6px 0" }}>Selamat Datang Kembali</h1>
-            <p style={{ fontSize: "0.875rem", color: C.textMuted, margin: "0 0 32px 0" }}>Silakan masukkan detail akun Anda untuk masuk.</p>
+            <p style={{ fontSize: "0.875rem", color: C.textMuted, margin: "0 0 24px 0" }}>Silakan masukkan detail akun Anda untuk masuk.</p>
+
+            {errorMsg && (
+              <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: 8, padding: "10px 14px", marginBottom: 20, fontSize: "0.8125rem", color: "#DC2626", fontWeight: 600 }}>
+                {errorMsg}
+              </div>
+            )}
 
             <form onSubmit={async (e) => {
               e.preventDefault();
@@ -189,25 +203,18 @@ export default function LoginPage() {
               </div>
 
               {/* Social Logins */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                {[
-                  { name: "Google", emoji: "🌐" },
-                  { name: "Facebook", emoji: "🔵" },
-                ].map((s) => (
-                  <button
-                    key={s.name}
-                    type="button"
-                    style={{
-                      height: 44, border: `1.5px solid ${C.borderStrong}`, borderRadius: 8,
-                      background: "white", fontSize: "0.875rem", fontWeight: 600, color: C.text,
-                      cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-                      gap: 8, fontFamily: "inherit",
-                    }}
-                  >
-                    <span>{s.emoji}</span> {s.name}
-                  </button>
-                ))}
-              </div>
+              <button
+                type="button"
+                onClick={() => authService.loginWithGoogle()}
+                style={{
+                  width: "100%", height: 44, border: `1.5px solid ${C.borderStrong}`, borderRadius: 8,
+                  background: "white", fontSize: "0.875rem", fontWeight: 600, color: C.text,
+                  cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                  gap: 8, fontFamily: "inherit",
+                }}
+              >
+                <span>🌐</span> Google
+              </button>
 
               {/* Register Link */}
               <p style={{ textAlign: "center", fontSize: "0.875rem", color: C.textMuted, margin: 0 }}>
@@ -224,5 +231,13 @@ export default function LoginPage() {
       {/* ── Footer ── */}
       <Footer />
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   );
 }

@@ -1,42 +1,60 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { authService } from "@/backend/authService";
 
 export default function CustomerProfilePage() {
   const [user, setUser] = useState<any>(null);
-  const [isEditing, setIsEditing] = useState(false);
+  const [username, setUsername] = useState("");
   const [fullname, setFullname] = useState("");
-  const [birthdate, setBirthdate] = useState("15 Mei 1995");
-  const [gender, setGender] = useState("Perempuan");
-  const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
-  const [recentOrders, setRecentOrders] = useState<any[]>([]);
+  const [phone, setPhone] = useState("");
+  const [storeName, setStoreName] = useState("");
+  const [gender, setGender] = useState("");
+  const [birthdate, setBirthdate] = useState("");
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const currentUser = authService.getCurrentUser();
     if (currentUser) {
       setUser(currentUser);
-      setFullname(currentUser.nama_lengkap || currentUser.username);
-      setPhone(currentUser.no_telp || "");
+      setUsername(currentUser.username || "");
+      setFullname(currentUser.nama_lengkap || "");
       setEmail(currentUser.email || "");
-      
-      // Load recent orders (empty for database connection later)
-      setRecentOrders([]);
+      setPhone(currentUser.no_telp || "");
+      setStoreName(currentUser.nama_toko || currentUser.username || "");
+      setGender(currentUser.jenis_kelamin || "");
+      setBirthdate(currentUser.tanggal_lahir || "");
+      setAvatarPreview(currentUser.avatar || null);
     }
   }, []);
 
-  const handleProfileSave = async (e: React.FormEvent) => {
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 1 * 1024 * 1024) {
+      alert("Ukuran gambar maksimal 1 MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setAvatarPreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (user) {
-      const success = await authService.updateProfile(user.id_user, fullname, phone);
+      const success = await authService.updateProfile(user.id_user, fullname, phone, {
+        username,
+        avatar: avatarPreview ?? user.avatar,
+      });
       if (success) {
         const updatedUser = authService.getCurrentUser();
         setUser(updatedUser);
+        alert("Profil berhasil diperbarui!");
       }
     }
-    setIsEditing(false);
-    alert("Profil Berhasil Diperbarui!");
   };
 
   if (!user) {
@@ -47,149 +65,186 @@ export default function CustomerProfilePage() {
     );
   }
 
+  // Mask email: d.********@gmail.com
+  const maskedEmail = email.replace(
+    /^(.{1})(.*)(@.*)$/,
+    (_, first, middle, domain) => `${first}.${"*".repeat(8)}${domain}`
+  );
+
   return (
-    <div className="space-y-8">
-      {/* User Header Details card */}
-      <section className="bg-white border border-surface-container rounded-xl p-8 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="flex items-center gap-6">
-          <div className="w-20 h-20 rounded-full overflow-hidden border border-surface-container-high bg-zinc-200">
-            <img src={user.avatar || "https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=150&auto=format&fit=crop"} alt="Customer Profile Large" className="w-full h-full object-cover" />
+    <div className="bg-white border border-surface-container rounded-xl shadow-sm">
+      {/* Header */}
+      <div className="px-8 pt-8 pb-4 border-b border-surface-container">
+        <h2 className="font-headline font-bold text-xl text-on-surface">Profil Saya</h2>
+        <p className="text-sm text-secondary mt-0.5">
+          Kelola informasi profil Anda untuk mengontrol, melindungi dan mengamankan akun
+        </p>
+      </div>
+
+      <form onSubmit={handleSave}>
+        <div className="flex flex-col md:flex-row">
+          {/* Left: Form */}
+          <div className="flex-1 px-8 py-6 space-y-5">
+
+            {/* Username */}
+            <div className="flex items-start gap-4">
+              <label className="w-32 text-right text-sm text-on-surface pt-2 shrink-0">
+                Username
+              </label>
+              <div className="flex-1 space-y-1">
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full max-w-sm px-3 py-2 border border-surface-container rounded text-sm text-on-surface focus:outline-none focus:border-primary"
+                />
+                <p className="text-xs text-secondary">Username hanya dapat diubah satu (1) kali.</p>
+              </div>
+            </div>
+
+            {/* Nama */}
+            <div className="flex items-center gap-4">
+              <label className="w-32 text-right text-sm text-on-surface shrink-0">
+                Nama
+              </label>
+              <input
+                type="text"
+                value={fullname}
+                onChange={(e) => setFullname(e.target.value)}
+                className="w-full max-w-sm px-3 py-2 border border-surface-container rounded text-sm text-on-surface focus:outline-none focus:border-primary"
+              />
+            </div>
+
+            {/* Email */}
+            <div className="flex items-center gap-4">
+              <label className="w-32 text-right text-sm text-on-surface shrink-0">
+                Email
+              </label>
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-on-surface">{maskedEmail}</span>
+                <button type="button" className="text-primary text-sm hover:underline font-medium">
+                  Ubah
+                </button>
+              </div>
+            </div>
+
+            {/* Nomor Telepon */}
+            <div className="flex items-center gap-4">
+              <label className="w-32 text-right text-sm text-secondary shrink-0">
+                Nomor Telepon
+              </label>
+              <div className="flex items-center gap-2 text-sm">
+                {phone ? (
+                  <span className="text-on-surface">{phone}</span>
+                ) : (
+                  <button type="button" className="text-primary text-sm hover:underline font-medium">
+                    Tambah
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Nama Toko */}
+            <div className="flex items-center gap-4">
+              <label className="w-32 text-right text-sm text-on-surface shrink-0">
+                Nama Toko
+              </label>
+              <input
+                type="text"
+                value={storeName}
+                onChange={(e) => setStoreName(e.target.value)}
+                className="w-full max-w-sm px-3 py-2 border border-surface-container rounded text-sm text-on-surface focus:outline-none focus:border-primary"
+              />
+            </div>
+
+            {/* Jenis Kelamin */}
+            <div className="flex items-center gap-4">
+              <label className="w-32 text-right text-sm text-on-surface shrink-0">
+                Jenis Kelamin
+              </label>
+              <div className="flex items-center gap-4 text-sm text-on-surface">
+                {["Laki-laki", "Perempuan", "Lainnya"].map((opt) => (
+                  <label key={opt} className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="gender"
+                      value={opt}
+                      checked={gender === opt}
+                      onChange={() => setGender(opt)}
+                      className="accent-primary"
+                    />
+                    {opt}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Tanggal Lahir */}
+            <div className="flex items-center gap-4">
+              <label className="w-32 text-right text-sm text-on-surface shrink-0 flex items-center justify-end gap-1">
+                Tanggal lahir
+                <span className="material-symbols-outlined text-[14px] text-secondary cursor-help" title="Tanggal lahir tidak dapat dilihat publik">
+                  help
+                </span>
+              </label>
+              <div className="flex items-center gap-2">
+                {birthdate ? (
+                  <span className="text-sm text-on-surface">{birthdate}</span>
+                ) : (
+                  <span className="text-sm text-on-surface">–</span>
+                )}
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <div className="flex items-center gap-4 pt-2">
+              <div className="w-32 shrink-0" />
+              <button
+                type="submit"
+                className="px-8 py-2.5 bg-primary text-white font-semibold text-sm rounded hover:brightness-95 transition"
+              >
+                Simpan
+              </button>
+            </div>
           </div>
-          <div className="space-y-1">
-            <h2 className="font-headline font-bold text-2xl text-on-surface leading-tight">{fullname}</h2>
-            <p className="font-body text-xs text-secondary">{email} &bull; Joined Jan 2023</p>
-            <div className="flex gap-3 pt-2">
-              <span className="text-[10px] font-bold text-secondary bg-surface-container px-2 py-0.5 rounded border border-surface-container-high">
-                Poin Saya: 1,250 pts
-              </span>
-              <span className="text-[10px] font-bold text-primary bg-orange-50 px-2 py-0.5 rounded border border-orange-100">
-                Voucher: 4 Tersedia
-              </span>
+
+          {/* Divider */}
+          <div className="hidden md:block w-px bg-surface-container my-6" />
+
+          {/* Right: Avatar Upload */}
+          <div className="flex flex-col items-center justify-start px-10 py-10 gap-4">
+            {/* Avatar Circle */}
+            <div className="w-24 h-24 rounded-full overflow-hidden border border-surface-container bg-zinc-200 flex items-center justify-center">
+              {avatarPreview ? (
+                <img src={avatarPreview} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                <span className="material-symbols-outlined text-[48px] text-zinc-400">person</span>
+              )}
+            </div>
+
+            {/* Upload Button */}
+            <input
+              type="file"
+              accept=".jpg,.jpeg,.png"
+              ref={fileInputRef}
+              onChange={handleAvatarChange}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="px-5 py-2 border border-surface-container rounded text-sm text-on-surface hover:bg-surface-container/50 transition"
+            >
+              Pilih Gambar
+            </button>
+
+            <div className="text-center text-xs text-secondary space-y-0.5">
+              <p>Ukuran gambar: maks. 1 MB</p>
+              <p>Format gambar: .JPEG, .PNG</p>
             </div>
           </div>
         </div>
-
-        <button 
-          onClick={() => setIsEditing(!isEditing)}
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-white font-bold text-xs rounded hover:brightness-95 transition"
-        >
-          <span className="material-symbols-outlined text-[16px]">edit</span>
-          {isEditing ? "Batal Edit" : "Edit Profil"}
-        </button>
-      </section>
-
-      {/* Basic info vs Recent orders split grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* Informasi Dasar */}
-        <section className="bg-white border border-surface-container rounded-xl p-6 shadow-sm space-y-4">
-          <h3 className="font-headline font-bold text-base text-on-surface border-b border-surface-container pb-2 flex items-center gap-2">
-            <span className="material-symbols-outlined text-secondary">person</span>
-            Informasi Dasar
-          </h3>
-          
-          {isEditing ? (
-            <form onSubmit={handleProfileSave} className="space-y-4">
-              <div className="space-y-1">
-                <label className="block text-xs font-bold text-secondary uppercase tracking-wider">Nama Lengkap</label>
-                <input 
-                  type="text" 
-                  value={fullname}
-                  onChange={(e) => setFullname(e.target.value)}
-                  className="w-full px-3 py-2 border border-surface-container rounded bg-white text-xs font-body"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="block text-xs font-bold text-secondary uppercase tracking-wider">Tanggal Lahir</label>
-                <input 
-                  type="text" 
-                  value={birthdate}
-                  onChange={(e) => setBirthdate(e.target.value)}
-                  className="w-full px-3 py-2 border border-surface-container rounded bg-white text-xs font-body"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="block text-xs font-bold text-secondary uppercase tracking-wider">Jenis Kelamin</label>
-                <select 
-                  value={gender}
-                  onChange={(e) => setGender(e.target.value)}
-                  className="w-full px-3 py-2 border border-surface-container rounded bg-white text-xs font-semibold text-secondary"
-                >
-                  <option>Perempuan</option>
-                  <option>Laki-laki</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="block text-xs font-bold text-secondary uppercase tracking-wider">Nomor HP</label>
-                <input 
-                  type="text" 
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="w-full px-3 py-2 border border-surface-container rounded bg-white text-xs font-body"
-                />
-              </div>
-              <button 
-                type="submit"
-                className="w-full py-2 bg-primary text-white font-bold text-xs rounded hover:brightness-95 transition"
-              >
-                Simpan Perubahan
-              </button>
-            </form>
-          ) : (
-            <div className="space-y-3 font-body text-xs">
-              <div className="grid grid-cols-3 py-1">
-                <span className="font-bold text-secondary">Nama Lengkap</span>
-                <span className="col-span-2 text-on-surface font-semibold">{fullname}</span>
-              </div>
-              <div className="grid grid-cols-3 py-1 border-t border-surface-container">
-                <span className="font-bold text-secondary">Tanggal Lahir</span>
-                <span className="col-span-2 text-on-surface font-semibold">{birthdate}</span>
-              </div>
-              <div className="grid grid-cols-3 py-1 border-t border-surface-container">
-                <span className="font-bold text-secondary">Jenis Kelamin</span>
-                <span className="col-span-2 text-on-surface font-semibold">{gender}</span>
-              </div>
-              <div className="grid grid-cols-3 py-1 border-t border-surface-container">
-                <span className="font-bold text-secondary">Nomor HP</span>
-                <span className="col-span-2 text-on-surface font-semibold">{phone}</span>
-              </div>
-            </div>
-          )}
-        </section>
-
-        {/* Pesanan Terakhir */}
-        <section className="bg-white border border-surface-container rounded-xl p-6 shadow-sm space-y-4">
-          <div className="flex justify-between items-center border-b border-surface-container pb-2">
-            <h3 className="font-headline font-bold text-base text-on-surface flex items-center gap-2">
-              <span className="material-symbols-outlined text-secondary">history</span>
-              Pesanan Terakhir
-            </h3>
-            <button className="text-primary font-bold text-xs hover:underline">Lihat Semua</button>
-          </div>
-
-          <div className="space-y-3">
-            {recentOrders.length > 0 ? (
-              recentOrders.map((ord, idx) => (
-                <div key={idx} className="p-4 border border-surface-container rounded-lg bg-surface-container-low/20 flex justify-between items-center">
-                  <div className="space-y-1">
-                    <p className="font-semibold text-xs text-on-surface leading-tight">{ord.item}</p>
-                    <p className="text-[10px] text-secondary font-semibold">{ord.invoice}</p>
-                    <p className="font-bold text-xs text-primary mt-1">Rp {ord.price.toLocaleString("id-ID")}</p>
-                  </div>
-                  <span className={`px-2.5 py-0.5 rounded text-[9px] font-extrabold uppercase border ${ord.status === "Selesai" ? "bg-green-50 text-green-700 border-green-200" : "bg-blue-50 text-blue-700 border-blue-200"}`}>
-                    {ord.status}
-                  </span>
-                </div>
-              ))
-            ) : (
-              <div className="p-6 text-center text-secondary border border-dashed border-surface-container rounded-lg font-body text-xs">
-                Belum ada pesanan terbaru.
-              </div>
-            )}
-          </div>
-        </section>
-
-      </div>
+      </form>
     </div>
   );
 }

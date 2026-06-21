@@ -1,42 +1,114 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { authService } from "@/backend/authService";
+import { supabase } from "@/backend/supabase";
+
+const isPlaceholder = () =>
+  !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder");
 
 export default function CustomerSecurityPage() {
+  const [user, setUser] = useState<ReturnType<typeof authService.getCurrentUser>>(null);
   const [tfaEnabled, setTfaEnabled] = useState(false);
-  const [sessions, setSessions] = useState([
-    {
-      id: "1",
-      device: "MacBook Pro",
-      location: "Jakarta, Indonesia",
-      info: "Chrome Browser",
-      status: "Aktif Sekarang",
-      isCurrent: true,
-    },
-    {
-      id: "2",
-      device: "iPhone 13",
-      location: "Bandung, Indonesia",
-      info: "Aplikasi Pelataran UMKM",
-      status: "2 jam yang lalu",
-      isCurrent: false,
-    }
-  ]);
 
-  const handleLogoutSession = (id: string, device: string) => {
-    if (confirm(`Apakah Anda yakin ingin mengeluarkan sesi dari perangkat ${device}?`)) {
-      setSessions((prev) => prev.filter((s) => s.id !== id));
+  // Password change
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [currentPass, setCurrentPass] = useState("");
+  const [newPass, setNewPass] = useState("");
+  const [confirmPass, setConfirmPass] = useState("");
+  const [passLoading, setPassLoading] = useState(false);
+  const [passMsg, setPassMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
+  // Phone change
+  const [showPhoneForm, setShowPhoneForm] = useState(false);
+  const [newPhone, setNewPhone] = useState("");
+  const [phoneLoading, setPhoneLoading] = useState(false);
+  const [phoneMsg, setPhoneMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
+  useEffect(() => {
+    const u = authService.getCurrentUser();
+    setUser(u);
+    if (u) setNewPhone(u.no_telp || "");
+  }, []);
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPassMsg(null);
+    if (newPass !== confirmPass) {
+      setPassMsg({ type: "err", text: "Konfirmasi kata sandi tidak cocok." });
+      return;
     }
+    if (newPass.length < 6) {
+      setPassMsg({ type: "err", text: "Kata sandi minimal 6 karakter." });
+      return;
+    }
+    setPassLoading(true);
+
+    if (isPlaceholder()) {
+      // No real auth in placeholder mode
+      setPassMsg({ type: "ok", text: "Kata sandi berhasil diperbarui (mode lokal)." });
+      setShowPasswordForm(false);
+      setCurrentPass(""); setNewPass(""); setConfirmPass("");
+      setPassLoading(false);
+      return;
+    }
+
+    const { error } = await supabase.auth.updateUser({ password: newPass });
+    if (error) {
+      setPassMsg({ type: "err", text: error.message });
+    } else {
+      setPassMsg({ type: "ok", text: "Kata sandi berhasil diperbarui." });
+      setShowPasswordForm(false);
+      setCurrentPass(""); setNewPass(""); setConfirmPass("");
+    }
+    setPassLoading(false);
   };
 
-  const handleDeleteAccount = () => {
+  const handlePhoneChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPhoneMsg(null);
+    if (!newPhone.match(/^[+0-9\s]{8,}$/)) {
+      setPhoneMsg({ type: "err", text: "Nomor telepon tidak valid." });
+      return;
+    }
+    setPhoneLoading(true);
+
+    if (!user) { setPhoneLoading(false); return; }
+
+    const success = await authService.updateProfile(user.id_user, user.nama_lengkap, newPhone);
+    if (success) {
+      setUser(authService.getCurrentUser());
+      setPhoneMsg({ type: "ok", text: "Nomor telepon berhasil diperbarui." });
+      setShowPhoneForm(false);
+    } else {
+      setPhoneMsg({ type: "err", text: "Gagal memperbarui nomor telepon." });
+    }
+    setPhoneLoading(false);
+  };
+
+  const handleDeleteAccount = async () => {
     const confirmText = prompt("Ketik HAPUS untuk mengonfirmasi penghapusan akun Anda secara permanen:");
-    if (confirmText === "HAPUS") {
-      alert("Akun Anda telah berhasil dijadwalkan untuk dihapus.");
-    } else if (confirmText !== null) {
-      alert("Konfirmasi tidak valid. Penghapusan dibatalkan.");
+    if (confirmText !== "HAPUS") {
+      if (confirmText !== null) alert("Konfirmasi tidak valid. Penghapusan dibatalkan.");
+      return;
     }
+    if (!user) return;
+
+    if (!isPlaceholder()) {
+      await supabase.from("users").delete().eq("id_user", user.id_user);
+    }
+    authService.logout();
+    window.location.href = "/";
   };
+
+  const maskedEmail = user?.email
+    ? user.email.replace(/^(.{1})(.*)(@.*)$/, (_, f, m, d) => `${f}.${"*".repeat(8)}${d}`)
+    : "–";
+
+  const maskedPhone = user?.no_telp
+    ? user.no_telp.replace(/(\d{4})(\d+)(\d{4})/, "$1 **** $3")
+    : null;
 
   return (
     <div className="space-y-8">
@@ -48,9 +120,8 @@ export default function CustomerSecurityPage() {
         </p>
       </header>
 
-      {/* Main security grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        
+
         {/* Kata Sandi */}
         <section className="bg-white border border-surface-container p-6 rounded-xl space-y-4 shadow-sm flex flex-col justify-between">
           <div className="space-y-2">
@@ -61,16 +132,47 @@ export default function CustomerSecurityPage() {
             <p className="text-xs text-secondary font-medium leading-relaxed">
               Ganti kata sandi Anda secara berkala untuk menjaga keamanan akun dari akses yang tidak sah.
             </p>
-            <p className="text-[10px] text-secondary font-bold pt-1">
-              Terakhir diubah: 3 bulan yang lalu
-            </p>
           </div>
-          <button 
-            onClick={() => alert("Membuka dialog Ganti Kata Sandi...")}
-            className="w-full py-2.5 bg-primary text-white font-bold text-xs rounded hover:brightness-95 transition"
-          >
-            Ganti Kata Sandi
-          </button>
+
+          {showPasswordForm ? (
+            <form onSubmit={handlePasswordChange} className="space-y-3 text-xs">
+              {passMsg && (
+                <p className={`text-xs font-semibold px-3 py-2 rounded ${passMsg.type === "ok" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}>
+                  {passMsg.text}
+                </p>
+              )}
+              <div className="space-y-1">
+                <label className="font-bold text-secondary uppercase tracking-wider text-[10px]">Kata Sandi Saat Ini</label>
+                <input type="password" required value={currentPass} onChange={(e) => setCurrentPass(e.target.value)}
+                  className="w-full px-3 py-2 border border-surface-container rounded text-sm focus:outline-none focus:border-primary" />
+              </div>
+              <div className="space-y-1">
+                <label className="font-bold text-secondary uppercase tracking-wider text-[10px]">Kata Sandi Baru</label>
+                <input type="password" required value={newPass} onChange={(e) => setNewPass(e.target.value)}
+                  className="w-full px-3 py-2 border border-surface-container rounded text-sm focus:outline-none focus:border-primary" />
+              </div>
+              <div className="space-y-1">
+                <label className="font-bold text-secondary uppercase tracking-wider text-[10px]">Konfirmasi Kata Sandi Baru</label>
+                <input type="password" required value={confirmPass} onChange={(e) => setConfirmPass(e.target.value)}
+                  className="w-full px-3 py-2 border border-surface-container rounded text-sm focus:outline-none focus:border-primary" />
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button type="button" onClick={() => { setShowPasswordForm(false); setPassMsg(null); }}
+                  className="flex-1 py-2 border border-surface-container text-secondary font-bold text-xs rounded hover:bg-surface-container transition">
+                  Batal
+                </button>
+                <button type="submit" disabled={passLoading}
+                  className="flex-1 py-2 bg-primary text-white font-bold text-xs rounded hover:brightness-95 transition disabled:opacity-60">
+                  {passLoading ? "Menyimpan..." : "Simpan"}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <button onClick={() => setShowPasswordForm(true)}
+              className="w-full py-2.5 bg-primary text-white font-bold text-xs rounded hover:brightness-95 transition">
+              Ganti Kata Sandi
+            </button>
+          )}
         </section>
 
         {/* Verifikasi Kontak */}
@@ -79,36 +181,62 @@ export default function CustomerSecurityPage() {
             <span className="material-symbols-outlined text-secondary">verified_user</span>
             Verifikasi Kontak
           </h3>
-          
-          <div className="space-y-4 text-xs font-body">
+
+          <div className="space-y-3 text-xs font-body">
+            {/* Email */}
             <div className="flex justify-between items-center py-1">
               <div>
                 <p className="font-bold text-secondary">Email</p>
-                <p className="font-semibold text-on-surface">budi.umkm@gmail.com</p>
+                <p className="font-semibold text-on-surface">{maskedEmail}</p>
               </div>
               <span className="bg-green-50 text-green-700 border border-green-200 text-[10px] font-bold px-2 py-0.5 rounded">
                 Terverifikasi
               </span>
             </div>
-            
-            <div className="flex justify-between items-center py-2 border-t border-surface-container">
-              <div>
-                <p className="font-bold text-secondary">Nomor Telepon</p>
-                <p className="font-semibold text-on-surface">0812 **** 5678</p>
-              </div>
-              <button 
-                onClick={() => alert("Membuka form ubah nomor telepon...")}
-                className="text-primary font-bold hover:underline"
-              >
-                Ubah
-              </button>
+
+            {/* Nomor Telepon */}
+            <div className="border-t border-surface-container pt-3">
+              {phoneMsg && (
+                <p className={`text-xs font-semibold px-3 py-2 rounded mb-2 ${phoneMsg.type === "ok" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}>
+                  {phoneMsg.text}
+                </p>
+              )}
+              {showPhoneForm ? (
+                <form onSubmit={handlePhoneChange} className="space-y-2">
+                  <div className="space-y-1">
+                    <label className="font-bold text-secondary uppercase tracking-wider text-[10px]">Nomor Telepon Baru</label>
+                    <input type="tel" required value={newPhone} onChange={(e) => setNewPhone(e.target.value)}
+                      placeholder="+62 8xxx"
+                      className="w-full px-3 py-2 border border-surface-container rounded text-sm focus:outline-none focus:border-primary" />
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => { setShowPhoneForm(false); setPhoneMsg(null); }}
+                      className="flex-1 py-1.5 border border-surface-container text-secondary font-bold text-xs rounded hover:bg-surface-container transition">
+                      Batal
+                    </button>
+                    <button type="submit" disabled={phoneLoading}
+                      className="flex-1 py-1.5 bg-primary text-white font-bold text-xs rounded hover:brightness-95 transition disabled:opacity-60">
+                      {phoneLoading ? "Menyimpan..." : "Simpan"}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="font-bold text-secondary">Nomor Telepon</p>
+                    <p className="font-semibold text-on-surface">{maskedPhone ?? "Belum ditambahkan"}</p>
+                  </div>
+                  <button onClick={() => setShowPhoneForm(true)} className="text-primary font-bold hover:underline text-xs">
+                    {user?.no_telp ? "Ubah" : "Tambah"}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </section>
-
       </div>
 
-      {/* Autentikasi 2 Faktor (2FA) */}
+      {/* 2FA */}
       <section className="bg-white border border-surface-container p-6 rounded-xl shadow-sm grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
         <div className="md:col-span-2 space-y-2">
           <h3 className="font-headline font-bold text-base text-on-surface flex items-center gap-2">
@@ -119,73 +247,33 @@ export default function CustomerSecurityPage() {
             Tambahkan lapisan keamanan ekstra ke akun Anda. Setelah diaktifkan, Anda akan diminta memasukkan kode verifikasi setiap kali login.
           </p>
           <div className="flex items-center gap-4 text-[10px] font-bold text-secondary pt-1">
-            <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[14px] text-green-600">done</span> Keamanan berlapis</span>
-            <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[14px] text-green-600">done</span> Notifikasi login baru</span>
+            <span className="flex items-center gap-1">
+              <span className="material-symbols-outlined text-[14px] text-green-600">done</span>
+              Keamanan berlapis
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="material-symbols-outlined text-[14px] text-green-600">done</span>
+              Notifikasi login baru
+            </span>
           </div>
         </div>
-
         <div className="flex flex-col items-center gap-3">
-          <div className="w-20 h-20 bg-zinc-100 rounded border border-surface-container-high flex items-center justify-center relative">
-            <div className="absolute inset-2 bg-cover bg-center" style={{ backgroundImage: `url('https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?q=80&w=100&auto=format&fit=crop')` }}></div>
-            {tfaEnabled && <span className="absolute inset-0 bg-green-500/20 backdrop-blur-xs flex items-center justify-center text-green-600 font-bold text-xs">ACTIVE</span>}
+          <div className={`w-16 h-16 rounded-full border-4 flex items-center justify-center transition ${tfaEnabled ? "border-green-500 bg-green-50" : "border-surface-container bg-surface-container"}`}>
+            <span className={`material-symbols-outlined text-3xl ${tfaEnabled ? "text-green-600" : "text-secondary"}`}>
+              {tfaEnabled ? "shield" : "shield"}
+            </span>
           </div>
           <button
-            onClick={() => {
-              setTfaEnabled(!tfaEnabled);
-              alert(tfaEnabled ? "2FA Dinonaktifkan." : "2FA Diaktifkan! Pindai kode QR untuk mengonfigurasi.");
-            }}
-            className={`w-full py-2 border rounded font-bold text-xs transition ${tfaEnabled ? "bg-green-600 border-green-600 text-white" : "border-on-surface text-on-surface hover:bg-surface-container"}`}
+            onClick={() => setTfaEnabled(!tfaEnabled)}
+            className={`w-full py-2 border rounded font-bold text-xs transition ${
+              tfaEnabled
+                ? "bg-green-600 border-green-600 text-white"
+                : "border-on-surface text-on-surface hover:bg-surface-container"
+            }`}
           >
             {tfaEnabled ? "Matikan 2FA" : "Aktifkan 2FA"}
           </button>
         </div>
-      </section>
-
-      {/* Sesi Aktif */}
-      <section className="bg-white border border-surface-container rounded-xl p-6 shadow-sm space-y-4">
-        <h3 className="font-headline font-bold text-base text-on-surface flex items-center gap-2">
-          <span className="material-symbols-outlined text-secondary">devices</span>
-          Sesi Aktif
-        </h3>
-        <p className="text-xs text-secondary font-medium pb-2 border-b border-surface-container">
-          Perangkat yang saat ini sedang login ke akun Anda.
-        </p>
-
-        <div className="divide-y divide-surface-container">
-          {sessions.map((session) => (
-            <div key={session.id} className="py-4 flex justify-between items-center text-xs">
-              <div className="flex items-center gap-3">
-                <span className="material-symbols-outlined text-secondary text-2xl">
-                  {session.device === "MacBook Pro" ? "laptop" : "smartphone"}
-                </span>
-                <div>
-                  <p className="font-bold text-on-surface">{session.device} &bull; {session.location}</p>
-                  <p className="text-secondary font-semibold mt-0.5">
-                    {session.info} &bull; <span className={session.isCurrent ? "text-green-600 font-bold" : ""}>{session.status}</span>
-                  </p>
-                </div>
-              </div>
-              
-              {session.isCurrent ? (
-                <span className="text-secondary font-bold">Perangkat Ini</span>
-              ) : (
-                <button
-                  onClick={() => handleLogoutSession(session.id, session.device)}
-                  className="text-error font-bold hover:underline"
-                >
-                  Keluar Sesi
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-        
-        <button 
-          onClick={() => alert("Menampilkan semua riwayat login...")}
-          className="w-full text-center text-xs font-bold text-primary hover:underline pt-2"
-        >
-          Lihat Semua Riwayat Login
-        </button>
       </section>
 
       {/* Hapus Akun */}
@@ -206,7 +294,6 @@ export default function CustomerSecurityPage() {
           Hapus Akun Saya
         </button>
       </section>
-
     </div>
   );
 }
