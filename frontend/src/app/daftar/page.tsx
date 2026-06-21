@@ -8,7 +8,7 @@ import { Mail, Lock, Eye, EyeOff, User, Users, Grid } from "lucide-react";
 
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import { db } from "@/lib/db";
+import { authService } from "@/backend/authService";
 
 const C = {
   primary: "#1D4ED8",
@@ -108,12 +108,15 @@ export default function RegisterPage() {
             <h1 style={{ fontSize: "1.625rem", fontWeight: 800, color: C.text, margin: "0 0 6px 0" }}>Buat Akun Baru</h1>
             <p style={{ fontSize: "0.875rem", color: C.textMuted, margin: "0 0 28px 0" }}>Mulai langkah suksesmu di Pelataran UMKM.</p>
 
-            <form onSubmit={(e) => {
+            <form onSubmit={async (e) => {
               e.preventDefault();
-              const newUser = db.registerUser(name, email, "");
-              db.setCurrentUser(newUser);
-              alert("Pendaftaran berhasil! Selamat datang.");
-              router.push("/account/profile");
+              const newUser = await authService.register(name, email, "");
+              if (newUser) {
+                alert("Pendaftaran berhasil! Selamat datang.");
+                router.push("/account/profile");
+              } else {
+                alert("Pendaftaran gagal. Silakan coba lagi.");
+              }
             }} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
 
               {/* Full Name */}

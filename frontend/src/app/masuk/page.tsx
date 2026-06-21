@@ -8,7 +8,7 @@ import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import { db } from "@/lib/db";
+import { authService } from "@/backend/authService";
 
 const C = {
   primary: "#1D4ED8",
@@ -96,9 +96,9 @@ export default function LoginPage() {
             <h1 style={{ fontSize: "1.625rem", fontWeight: 800, color: C.text, margin: "0 0 6px 0" }}>Selamat Datang Kembali</h1>
             <p style={{ fontSize: "0.875rem", color: C.textMuted, margin: "0 0 32px 0" }}>Silakan masukkan detail akun Anda untuk masuk.</p>
 
-            <form onSubmit={(e) => {
+            <form onSubmit={async (e) => {
               e.preventDefault();
-              const user = db.authenticate(email);
+              const user = await authService.login(email);
               if (user) {
                 if (user.role === "admin") {
                   router.push("/admin/dashboard");

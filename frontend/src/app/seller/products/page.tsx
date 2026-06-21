@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { db, Product } from "@/lib/db";
 import { useRouter } from "next/navigation";
+import { authService } from "@/backend/authService";
+import { sellerService } from "@/backend/sellerService";
+import { productService, Product } from "@/backend/productService";
 
 export default function SellerProductsPage() {
   const router = useRouter();
@@ -16,22 +18,21 @@ export default function SellerProductsPage() {
   const [newProductStock, setNewProductStock] = useState("");
   const [products, setProducts] = useState<Product[]>([]);
 
-  const loadSellerData = () => {
-    const currentUser = db.getCurrentUser();
+  const loadSellerData = async () => {
+    const currentUser = authService.getCurrentUser();
     if (!currentUser) {
       router.push("/masuk");
       return;
     }
     setUser(currentUser);
-    const currentSeller = db.getSellerByUserId(currentUser.id_user);
+    const currentSeller = await sellerService.getSellerByUserId(currentUser.id_user);
     if (!currentSeller) {
-      // If user is not seller yet, let them know or redirect
       alert("Anda belum mendaftar sebagai Seller! Silakan daftar terlebih dahulu.");
       router.push("/account/seller");
       return;
     }
     setSeller(currentSeller);
-    const sellerProducts = db.getProductsBySeller(currentSeller.id_seller);
+    const sellerProducts = await productService.getProductsBySeller(currentSeller.id_seller);
     setProducts(sellerProducts);
   };
 
@@ -39,22 +40,26 @@ export default function SellerProductsPage() {
     loadSellerData();
   }, []);
 
-  const handleDelete = (sku: string, name: string) => {
+  const handleDelete = async (sku: string, name: string) => {
     if (confirm(`Apakah Anda yakin ingin menghapus produk ${name}?`)) {
-      db.deleteProduct(sku);
-      alert(`Produk ${name} berhasil dihapus!`);
-      loadSellerData();
+      const success = await productService.deleteProduct(sku);
+      if (success) {
+        alert(`Produk ${name} berhasil dihapus!`);
+        loadSellerData();
+      } else {
+        alert("Gagal menghapus produk.");
+      }
     }
   };
 
-  const handleAddProductSubmit = (e: React.FormEvent) => {
+  const handleAddProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!seller) {
       alert("Error: Data toko tidak ditemukan.");
       return;
     }
     
-    db.addProduct(
+    const newProduct = await productService.addProduct(
       seller.id_seller,
       newProductName,
       newProductCategory,
@@ -64,12 +69,16 @@ export default function SellerProductsPage() {
       (parseInt(newProductStock) || 0) > 0 ? "Aktif" : "Stok Habis"
     );
 
-    alert("Produk berhasil ditambahkan!");
-    loadSellerData();
-    setShowAddModal(false);
-    setNewProductName("");
-    setNewProductPrice("");
-    setNewProductStock("");
+    if (newProduct) {
+      alert("Produk berhasil ditambahkan!");
+      loadSellerData();
+      setShowAddModal(false);
+      setNewProductName("");
+      setNewProductPrice("");
+      setNewProductStock("");
+    } else {
+      alert("Gagal menambahkan produk.");
+    }
   };
 
   const filteredProducts = products.filter(

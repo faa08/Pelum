@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { db } from "@/lib/db";
+import { authService } from "@/backend/authService";
 
 export default function CustomerProfilePage() {
   const [user, setUser] = useState<any>(null);
@@ -14,25 +14,26 @@ export default function CustomerProfilePage() {
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
 
   useEffect(() => {
-    const currentUser = db.getCurrentUser();
+    const currentUser = authService.getCurrentUser();
     if (currentUser) {
       setUser(currentUser);
       setFullname(currentUser.nama_lengkap || currentUser.username);
       setPhone(currentUser.no_telp || "");
       setEmail(currentUser.email || "");
       
-      // Load recent orders from DB (initially empty)
-      const orders = db.getOrdersByUser(currentUser.id_user);
-      setRecentOrders(orders);
+      // Load recent orders (empty for database connection later)
+      setRecentOrders([]);
     }
   }, []);
 
-  const handleProfileSave = (e: React.FormEvent) => {
+  const handleProfileSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (user) {
-      const updatedUser = { ...user, nama_lengkap: fullname, no_telp: phone };
-      db.setCurrentUser(updatedUser);
-      setUser(updatedUser);
+      const success = await authService.updateProfile(user.id_user, fullname, phone);
+      if (success) {
+        const updatedUser = authService.getCurrentUser();
+        setUser(updatedUser);
+      }
     }
     setIsEditing(false);
     alert("Profil Berhasil Diperbarui!");

@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { db } from "@/lib/db";
+import { sellerService } from "@/backend/sellerService";
+import { authService } from "@/backend/authService";
 
 interface VerificationStore {
   id: string;
@@ -20,16 +21,14 @@ export default function AdminVerificationPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<"Semua" | "Pending" | "Disetujui" | "Ditolak">("Semua");
 
-  const fetchSellers = () => {
+  const fetchSellers = async () => {
     setIsLoading(true);
-    const sellers = db.getSellers();
-    const users = db.getUsers();
+    const sellers = await sellerService.getSellers();
     const formatted: VerificationStore[] = sellers.map((s) => {
-      const ownerUser = users.find(u => u.id_user === s.id_user);
       return {
         id: s.id_seller,
         name: s.nm_store,
-        owner: ownerUser?.nama_lengkap || s.email,
+        owner: s.atas_nama_rek || s.email,
         nib: s.nib || "-",
         category: "UMKM Lokal",
         dateApplied: new Date(s.created_at).toLocaleDateString("id-ID", {
@@ -53,10 +52,14 @@ export default function AdminVerificationPage() {
   const totalApproved = stores.filter(s => s.status === "Disetujui").length;
   const totalRejected = stores.filter(s => s.status === "Ditolak").length;
 
-  const handleAction = (id: string, approve: boolean) => {
-    db.verifySeller(id, approve);
-    alert(`Toko berhasil ${approve ? "disetujui" : "ditolak"}`);
-    fetchSellers();
+  const handleAction = async (id: string, approve: boolean) => {
+    const success = await sellerService.verifySeller(id, approve);
+    if (success) {
+      alert(`Toko berhasil ${approve ? "disetujui" : "ditolak"}`);
+      fetchSellers();
+    } else {
+      alert("Gagal memproses verifikasi toko.");
+    }
   };
 
   const filteredStores = stores.filter(store => {

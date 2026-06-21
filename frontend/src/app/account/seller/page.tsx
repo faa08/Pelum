@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { db } from "@/lib/db";
+import { authService } from "@/backend/authService";
+import { sellerService } from "@/backend/sellerService";
 
 export default function BecomeSellerPage() {
   const router = useRouter();
@@ -20,7 +21,7 @@ export default function BecomeSellerPage() {
   const [ktpFileName, setKtpFileName] = useState("");
 
   useEffect(() => {
-    const currentUser = db.getCurrentUser();
+    const currentUser = authService.getCurrentUser();
     if (currentUser) {
       setUser(currentUser);
       setEmail(currentUser.email || "");
@@ -65,7 +66,7 @@ export default function BecomeSellerPage() {
     }
   };
 
-  const handleRegisterSeller = (e: React.FormEvent) => {
+  const handleRegisterSeller = async (e: React.FormEvent) => {
     e.preventDefault();
     if (nomorHpError || ktpError || !ktpFileName || (uploadProgress !== null && uploadProgress < 100)) {
       alert("Harap perbaiki kesalahan input dan tunggu proses unggah dokumen selesai.");
@@ -77,11 +78,14 @@ export default function BecomeSellerPage() {
       return;
     }
     setLoading(true);
-    setTimeout(() => {
-      db.registerSeller(user.id_user, namaToko, email, nomorHp, nib, ktp, rekening, ktpFileName);
+    const newSeller = await sellerService.registerSeller(user.id_user, namaToko, email, nomorHp, nib, ktp, rekening, ktpFileName);
+    setLoading(false);
+    if (newSeller) {
       alert(`Pendaftaran Seller Berhasil!\n\nNama Toko: ${namaToko}\nNIB: ${nib}\nEmail: ${email}\n\nSelamat datang di Pelataran UMKM Seller.`);
       router.push("/seller/dashboard");
-    }, 1500);
+    } else {
+      alert("Pendaftaran gagal. Silakan coba lagi.");
+    }
   };
 
   return (
