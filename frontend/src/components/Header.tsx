@@ -166,18 +166,6 @@ export default function Header({
           <>
             {/* Action Area */}
             <div className="flex items-center gap-6">
-              {/* Search Bar inside Header */}
-              <div className="relative flex items-center w-[180px] sm:w-[240px] md:w-[320px]">
-                <span className="material-symbols-outlined absolute left-3 text-secondary text-[18px] pointer-events-none">search</span>
-                <input 
-                  type="text" 
-                  placeholder="Cari produk UMKM..." 
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery && setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 bg-surface-container rounded-lg border border-[#EAE5E0] focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-xs font-body text-[#1F1B18]"
-                />
-              </div>
-
               {/* Cart Icon */}
               <Link href="/keranjang" className="nav-cart-btn" id="cart-btn">
                 <ShoppingCart size={18} className="nav-icon-orange" />
