@@ -144,32 +144,6 @@ export default function Navbar({ searchQuery, setSearchQuery }: { searchQuery?: 
 
         {/* Right: Actions */}
         <div className="nav-actions-right">
-          {setSearchQuery && (
-            /* Search Bar inside Navbar */
-            <div className="relative flex items-center w-[150px] sm:w-[200px] md:w-[280px] mr-2">
-              <span className="material-symbols-outlined absolute left-3 text-secondary text-[16px] pointer-events-none">search</span>
-              <input 
-                type="text" 
-                placeholder="Cari produk UMKM..." 
-                value={searchQuery || ""}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                style={{
-                  width: "100%",
-                  paddingLeft: "2.25rem",
-                  paddingRight: "1rem",
-                  paddingTop: "0.5rem",
-                  paddingBottom: "0.5rem",
-                  background: "#F3F3F3",
-                  borderRadius: "8px",
-                  border: "1px solid #EAE5E0",
-                  fontSize: "12px",
-                  outline: "none",
-                  fontFamily: "inherit",
-                  color: "#1F1B18",
-                }}
-              />
-            </div>
-          )}
           <Link href="/keranjang" className="nav-cart-btn" id="cart-btn">
             <ShoppingCart size={18} className="nav-icon-orange" />
             <span>Keranjang</span>
