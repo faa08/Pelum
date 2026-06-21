@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState } from "react";
 import Image from "next/image";
@@ -8,6 +8,7 @@ import { Mail, Lock, Eye, EyeOff } from "lucide-react";
 
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import { db } from "@/lib/db";
 
 const C = {
   primary: "#1D4ED8",
@@ -97,12 +98,17 @@ export default function LoginPage() {
 
             <form onSubmit={(e) => {
               e.preventDefault();
-              if (email.toLowerCase().includes("admin")) {
-                router.push("/admin/dashboard");
-              } else if (email.toLowerCase().includes("seller")) {
-                router.push("/seller/dashboard");
+              const user = db.authenticate(email);
+              if (user) {
+                if (user.role === "admin") {
+                  router.push("/admin/dashboard");
+                } else if (user.role === "seller") {
+                  router.push("/seller/dashboard");
+                } else {
+                  router.push("/account/profile");
+                }
               } else {
-                router.push("/account/profile");
+                alert("Email tidak ditemukan! Silakan daftar terlebih dahulu.");
               }
             }} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 

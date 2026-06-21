@@ -1,6 +1,7 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect } from "react";
+import { db } from "@/lib/db";
 
 interface VerificationStore {
   id: string;
@@ -19,102 +20,43 @@ export default function AdminVerificationPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<"Semua" | "Pending" | "Disetujui" | "Ditolak">("Semua");
 
-  // Simulation loading data from Database
+  const fetchSellers = () => {
+    setIsLoading(true);
+    const sellers = db.getSellers();
+    const users = db.getUsers();
+    const formatted: VerificationStore[] = sellers.map((s) => {
+      const ownerUser = users.find(u => u.id_user === s.id_user);
+      return {
+        id: s.id_seller,
+        name: s.nm_store,
+        owner: ownerUser?.nama_lengkap || s.email,
+        nib: s.nib || "-",
+        category: "UMKM Lokal",
+        dateApplied: new Date(s.created_at).toLocaleDateString("id-ID", {
+          day: "numeric",
+          month: "long",
+          year: "numeric"
+        }),
+        documentName: s.img_ktp || "KTP_Dokumen.jpg",
+        status: s.is_verified ? "Disetujui" : "Pending"
+      };
+    });
+    setStores(formatted);
+    setIsLoading(false);
+  };
+
   useEffect(() => {
-    const timer = setTimeout(() => {
-      // Mocking empty state initially
-      setStores([]);
-      setIsLoading(false);
-    }, 1500);
-
-    return () => clearTimeout(timer);
+    fetchSellers();
   }, []);
-
-  /* 
-    ==========================================================================
-    BACKEND INTEGRATION GUIDE (SUPABASE)
-    ==========================================================================
-    Untuk menyambungkan dengan Supabase (tabel seller + users), gunakan query berikut:
-
-    import { createClient } from "@supabase/supabase-js";
-    const supabase = createClient("SUPABASE_URL", "SUPABASE_ANON_KEY");
-
-    const fetchVerificationQueue = async () => {
-      try {
-        setIsLoading(true);
-        // Mengambil data pendaftaran toko baru (seller belum diverifikasi)
-        const { data, error } = await supabase
-          .from("seller")
-          .select(`
-            id_seller,
-            nm_store,
-            created_at,
-            img_ktp,
-            no_telp,
-            users (
-              nama_lengkap
-            )
-          `)
-          .eq("is_verified", false);
-
-        if (error) throw error;
-
-        // Transformasi format data ke state frontend
-        const formatted: VerificationStore[] = (data || []).map((s: any) => ({
-          id: s.id_seller,
-          name: s.nm_store,
-          owner: s.users?.nama_lengkap || "Tanpa Nama",
-          nib: s.no_telp || "-", // Menampilkan telepon sebagai kontak/legalitas di UI
-          category: "UMKM Lokal",
-          dateApplied: new Date(s.created_at).toLocaleDateString("id-ID", {
-            day: "numeric",
-            month: "long",
-            year: "numeric"
-          }),
-          documentName: s.img_ktp || "KTP_Dokumen.jpg",
-          status: "Pending" // Karena belum terverifikasi
-        }));
-
-        setStores(formatted);
-      } catch (err) {
-        console.error("Gagal mengambil antrian verifikasi:", err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    // Fungsi Aksi Persetujuan (Approve/Reject)
-    const handleApproveReject = async (id: string, isApprove: boolean) => {
-      try {
-        const { error } = await supabase
-          .from("seller")
-          .update({ is_verified: isApprove })
-          .eq("id_seller", id);
-
-        if (error) throw error;
-        
-        // Refresh data setelah update
-        alert(`Toko berhasil ${isApprove ? "disetujui" : "ditolak"}`);
-        // fetchVerificationQueue();
-      } catch (err) {
-        console.error("Gagal memproses verifikasi:", err);
-      }
-    };
-  */
 
   const totalPending = stores.filter(s => s.status === "Pending").length;
   const totalApproved = stores.filter(s => s.status === "Disetujui").length;
   const totalRejected = stores.filter(s => s.status === "Ditolak").length;
 
   const handleAction = (id: string, approve: boolean) => {
-    setStores(prev => 
-      prev.map(store => {
-        if (store.id === id) {
-          return { ...store, status: approve ? "Disetujui" : "Ditolak" };
-        }
-        return store;
-      })
-    );
+    db.verifySeller(id, approve);
+    alert(`Toko berhasil ${approve ? "disetujui" : "ditolak"}`);
+    fetchSellers();
   };
 
   const filteredStores = stores.filter(store => {

@@ -1,66 +1,71 @@
 "use client";
 
-import React, { useState } from "react";
-
-const INITIAL_PRODUCTS = [
-  {
-    sku: "SKU-8821",
-    nama: "Mangkuk Keramik Motif Megamendung Handmade",
-    kategori: "Kerajinan",
-    harga: 125000,
-    stok: 45,
-    status: "Aktif",
-    img: "/product-keramik.png",
-  },
-  {
-    sku: "SKU-4912",
-    nama: "Kopi Toraja Arabika 250g Premium Roasted",
-    kategori: "Kuliner",
-    harga: 85000,
-    stok: 120,
-    status: "Aktif",
-    img: "/product-kopi.png",
-  },
-  {
-    sku: "SKU-7731",
-    nama: "Dompet Kulit Sapi Asli Handmade Cognac Brown",
-    kategori: "Fashion Pria",
-    harga: 210000,
-    stok: 0,
-    status: "Stok Habis",
-    img: "/product-dompet.png",
-  }
-];
+import React, { useState, useEffect } from "react";
+import { db, Product } from "@/lib/db";
+import { useRouter } from "next/navigation";
 
 export default function SellerProductsPage() {
+  const router = useRouter();
+  const [user, setUser] = useState<any>(null);
+  const [seller, setSeller] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
   const [newProductName, setNewProductName] = useState("");
   const [newProductCategory, setNewProductCategory] = useState("Fashion Pria");
   const [newProductPrice, setNewProductPrice] = useState("");
   const [newProductStock, setNewProductStock] = useState("");
-  
-  const [products, setProducts] = useState<any[]>(INITIAL_PRODUCTS);
+  const [products, setProducts] = useState<Product[]>([]);
+
+  const loadSellerData = () => {
+    const currentUser = db.getCurrentUser();
+    if (!currentUser) {
+      router.push("/masuk");
+      return;
+    }
+    setUser(currentUser);
+    const currentSeller = db.getSellerByUserId(currentUser.id_user);
+    if (!currentSeller) {
+      // If user is not seller yet, let them know or redirect
+      alert("Anda belum mendaftar sebagai Seller! Silakan daftar terlebih dahulu.");
+      router.push("/account/seller");
+      return;
+    }
+    setSeller(currentSeller);
+    const sellerProducts = db.getProductsBySeller(currentSeller.id_seller);
+    setProducts(sellerProducts);
+  };
+
+  useEffect(() => {
+    loadSellerData();
+  }, []);
 
   const handleDelete = (sku: string, name: string) => {
     if (confirm(`Apakah Anda yakin ingin menghapus produk ${name}?`)) {
-      setProducts((prev) => prev.filter((p) => p.sku !== sku));
+      db.deleteProduct(sku);
+      alert(`Produk ${name} berhasil dihapus!`);
+      loadSellerData();
     }
   };
 
   const handleAddProductSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const newProduct = {
-      sku: `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
-      nama: newProductName,
-      kategori: newProductCategory,
-      harga: parseFloat(newProductPrice) || 0,
-      stok: parseInt(newProductStock) || 0,
-      status: (parseInt(newProductStock) || 0) > 0 ? "Aktif" : "Stok Habis",
-      img: "https://images.unsplash.com/photo-1610701596007-11502861dcfa?q=80&w=100&auto=format&fit=crop",
-    };
+    if (!seller) {
+      alert("Error: Data toko tidak ditemukan.");
+      return;
+    }
     
-    setProducts((prev) => [newProduct, ...prev]);
+    db.addProduct(
+      seller.id_seller,
+      newProductName,
+      newProductCategory,
+      parseFloat(newProductPrice) || 0,
+      parseInt(newProductStock) || 0,
+      "Deskripsi produk baru",
+      (parseInt(newProductStock) || 0) > 0 ? "Aktif" : "Stok Habis"
+    );
+
+    alert("Produk berhasil ditambahkan!");
+    loadSellerData();
     setShowAddModal(false);
     setNewProductName("");
     setNewProductPrice("");
@@ -69,7 +74,7 @@ export default function SellerProductsPage() {
 
   const filteredProducts = products.filter(
     (p) =>
-      p.nama.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.nama_produk.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.sku.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -169,11 +174,11 @@ export default function SellerProductsPage() {
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-surface-container rounded overflow-hidden">
-                        <img src={p.img} alt={p.nama} className="w-full h-full object-cover" />
+                        <img src={p.img} alt={p.nama_produk} className="w-full h-full object-cover" />
                       </div>
                       <div>
-                        <p className="font-semibold text-sm text-on-surface leading-snug">{p.nama}</p>
-                        <p className="text-[10px] text-secondary font-medium mt-0.5">{p.kategori}</p>
+                        <p className="font-semibold text-sm text-on-surface leading-snug">{p.nama_produk}</p>
+                        <p className="text-[10px] text-secondary font-medium mt-0.5">{p.category}</p>
                       </div>
                     </div>
                   </td>
@@ -195,7 +200,7 @@ export default function SellerProductsPage() {
                         <span className="material-symbols-outlined text-[18px]">edit</span>
                       </button>
                       <button 
-                        onClick={() => handleDelete(p.sku, p.nama)}
+                        onClick={() => handleDelete(p.sku, p.nama_produk)}
                         className="p-1.5 hover:bg-error-container/30 rounded text-secondary hover:text-error transition"
                         title="Hapus Produk"
                       >

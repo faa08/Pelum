@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { db } from "@/lib/db";
 
 export default function BecomeSellerPage() {
   const router = useRouter();
@@ -9,13 +10,23 @@ export default function BecomeSellerPage() {
   const [showForm, setShowForm] = useState(false);
 
   // Form states for the 6 required documents
+  const [user, setUser] = useState<any>(null);
   const [namaToko, setNamaToko] = useState("");
   const [nomorHp, setNomorHp] = useState("");
-  const [email, setEmail] = useState("siti.rahayu@email.com");
+  const [email, setEmail] = useState("");
   const [rekening, setRekening] = useState("");
   const [ktp, setKtp] = useState("");
   const [nib, setNib] = useState("");
   const [ktpFileName, setKtpFileName] = useState("");
+
+  useEffect(() => {
+    const currentUser = db.getCurrentUser();
+    if (currentUser) {
+      setUser(currentUser);
+      setEmail(currentUser.email || "");
+      setNomorHp(currentUser.no_telp || "");
+    }
+  }, []);
 
   // Validation & interactive upload states
   const [nomorHpError, setNomorHpError] = useState("");
@@ -60,10 +71,16 @@ export default function BecomeSellerPage() {
       alert("Harap perbaiki kesalahan input dan tunggu proses unggah dokumen selesai.");
       return;
     }
+    if (!user) {
+      alert("Anda harus login terlebih dahulu.");
+      router.push("/masuk");
+      return;
+    }
     setLoading(true);
     setTimeout(() => {
+      db.registerSeller(user.id_user, namaToko, email, nomorHp, nib, ktp, rekening, ktpFileName);
       alert(`Pendaftaran Seller Berhasil!\n\nNama Toko: ${namaToko}\nNIB: ${nib}\nEmail: ${email}\n\nSelamat datang di Pelataran UMKM Seller.`);
-      router.push("/seller/products");
+      router.push("/seller/dashboard");
     }, 1500);
   };
 
