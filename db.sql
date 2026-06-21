@@ -541,3 +541,79 @@ CREATE POLICY "Seller can view own saldo"
     ON saldo_seller FOR SELECT USING (
         id_seller IN (SELECT id_seller FROM seller WHERE id_user = auth.uid())
     );
+
+
+-- ============================================================
+-- TABLE: chat_room
+-- ============================================================
+CREATE TABLE chat_room (
+    id_room      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id_buyer     UUID NOT NULL REFERENCES users(id_user) ON DELETE CASCADE,
+    id_seller    UUID NOT NULL REFERENCES seller(id_seller) ON DELETE CASCADE,
+    created_at   TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (id_buyer, id_seller)
+);
+
+-- ============================================================
+-- TABLE: chat_message
+-- ============================================================
+CREATE TABLE chat_message (
+    id_message   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id_room      UUID NOT NULL REFERENCES chat_room(id_room) ON DELETE CASCADE,
+    sender_id    UUID NOT NULL,
+    text         TEXT NOT NULL,
+    created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
+-- TABLE: support_ticket
+-- ============================================================
+CREATE TABLE support_ticket (
+    id_ticket    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id_user      UUID REFERENCES users(id_user) ON DELETE SET NULL,
+    subject      VARCHAR(255) NOT NULL,
+    message      TEXT NOT NULL,
+    created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Enable RLS
+ALTER TABLE chat_room       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chat_message    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE support_ticket  ENABLE ROW LEVEL SECURITY;
+
+-- Policies for chat_room
+CREATE POLICY "Users can view own chat rooms"
+    ON chat_room FOR SELECT USING (
+        auth.uid() = id_buyer OR id_seller IN (SELECT id_seller FROM seller WHERE id_user = auth.uid())
+    );
+CREATE POLICY "Users can create own chat rooms"
+    ON chat_room FOR INSERT WITH CHECK (
+        auth.uid() = id_buyer OR id_seller IN (SELECT id_seller FROM seller WHERE id_user = auth.uid())
+    );
+
+-- Policies for chat_message
+CREATE POLICY "Users can view messages in own rooms"
+    ON chat_message FOR SELECT USING (
+        id_room IN (
+            SELECT id_room FROM chat_room 
+            WHERE id_buyer = auth.uid() OR id_seller IN (SELECT id_seller FROM seller WHERE id_user = auth.uid())
+        )
+    );
+CREATE POLICY "Users can insert messages in own rooms"
+    ON chat_message FOR INSERT WITH CHECK (
+        sender_id = auth.uid() AND id_room IN (
+            SELECT id_room FROM chat_room 
+            WHERE id_buyer = auth.uid() OR id_seller IN (SELECT id_seller FROM seller WHERE id_user = auth.uid())
+        )
+    );
+
+-- Policies for support_ticket
+CREATE POLICY "Users can insert support tickets"
+    ON support_ticket FOR INSERT WITH CHECK (
+        id_user = auth.uid() OR id_user IS NULL
+    );
+CREATE POLICY "Users can view own support tickets"
+    ON support_ticket FOR SELECT USING (
+        id_user = auth.uid()
+    );
+
