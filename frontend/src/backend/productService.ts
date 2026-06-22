@@ -16,6 +16,7 @@ export interface Product {
   created_at: string;
   nama_brand?: string;
   kode_produk?: string;
+  variants?: { label: string; values: string[] }[];
 }
 
 const isPlaceholder = () => {

@@ -315,11 +315,11 @@ export default function Header({
                           </div>
                         </div>
                         <Link 
-                          href={currentUser.role === "admin" ? "/admin/dashboard" : "/account/profile"}
+                          href={currentUser?.role === "admin" ? "/admin/dashboard" : "/account/profile"}
                           onClick={() => setIsProfileOpen(false)}
                           className="px-3.5 py-1.5 bg-[#F5F3F0] hover:bg-[#EBE8E2] transition-colors rounded-full text-xs font-semibold text-gray-700"
                         >
-                          {currentUser.role === "admin" ? "Dashboard" : "Profil Saya"}
+                          {currentUser?.role === "admin" ? "Dashboard" : "Profil Saya"}
                         </Link>
                       </div>
 
