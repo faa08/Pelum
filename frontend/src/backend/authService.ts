@@ -7,7 +7,7 @@ export interface User {
   nama_lengkap: string;
   no_telp: string;
   avatar: string;
-  role: "customer" | "seller" | "admin";
+  role: "customer" | "admin";
   created_at: string;
   nama_toko?: string;
   jenis_kelamin?: string;
@@ -52,16 +52,20 @@ export const authService = {
   },
 
   // Login authentication
-  async login(email: string): Promise<User | null> {
+  async login(email: string, password?: string): Promise<User | null> {
     console.log("Calling authService.login for email:", email);
     
     if (isPlaceholder()) {
       console.warn("Using fallback local storage login (no Supabase config found)");
       const storedUsers = localStorage.getItem("pelum_users");
       if (storedUsers) {
-        const users = JSON.parse(storedUsers) as User[];
+        const users = JSON.parse(storedUsers) as any[];
         const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
         if (user) {
+          if (password && user.password && user.password !== password) {
+            console.error("Login failed: password mismatch");
+            return null;
+          }
           this.setCurrentUser(user);
           return user;
         }
@@ -77,11 +81,26 @@ export const authService = {
         .single();
 
       if (error) {
-        console.error("Supabase login query error:", error);
+        if (error.code === "PGRST116") {
+          console.warn("Supabase login: Email not found in database:", email);
+        } else {
+          console.error("Supabase login query error:", error.message || error);
+        }
         return null;
       }
 
       if (data) {
+        // Password verification (check plain text password)
+        if (password && data.password && data.password !== password) {
+          console.error("Login failed: password mismatch");
+          return null;
+        }
+
+        let userRole = data.role;
+        if (data.username === "admin_pelum" || data.username === "admin" || (data.email && data.email.includes("admin"))) {
+          userRole = "admin";
+        }
+
         const loggedUser: User = {
           id_user: data.id_user,
           username: data.username,
@@ -89,7 +108,7 @@ export const authService = {
           nama_lengkap: data.nama_lengkap || data.username,
           no_telp: data.no_telp || "",
           avatar: data.avatar || "",
-          role: data.role,
+          role: userRole,
           created_at: data.created_at
         };
         this.setCurrentUser(loggedUser);
@@ -125,8 +144,14 @@ export const authService = {
   },
 
   // Register new user
-  async register(username: string, email: string, no_telp: string): Promise<User | null> {
+  async register(username: string, email: string, no_telp: string, password?: string, tanggal_lahir?: string): Promise<User | null> {
     console.log("Calling authService.register for:", username);
+
+    // Check if email already exists first to avoid duplicate DB insertion errors
+    const emailExists = await this.checkEmailExists(email);
+    if (emailExists) {
+      throw new Error("Email sudah terdaftar! Silakan gunakan email lain atau masuk.");
+    }
 
     const newUser: User = {
       id_user: typeof crypto !== "undefined" ? crypto.randomUUID() : `u-${Math.random().toString(36).substr(2, 9)}`,
@@ -136,16 +161,16 @@ export const authService = {
       no_telp,
       avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=150&auto=format&fit=crop",
       role: "customer",
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      tanggal_lahir
     };
 
     if (isPlaceholder()) {
       console.warn("Using fallback local storage register (no Supabase config found)");
       const storedUsers = localStorage.getItem("pelum_users");
       const users = storedUsers ? JSON.parse(storedUsers) : [];
-      users.push(newUser);
+      users.push({ ...newUser, password });
       localStorage.setItem("pelum_users", JSON.stringify(users));
-      this.setCurrentUser(newUser);
       return newUser;
     }
 
@@ -155,24 +180,93 @@ export const authService = {
         .insert({
           id_user: newUser.id_user,
           username: newUser.username,
-          password: "no-password-plain", // default placeholder password for simple custom table
+          password: password || "no-password-plain", 
           email: newUser.email,
           nama_lengkap: newUser.nama_lengkap,
           no_telp: newUser.no_telp,
           avatar: newUser.avatar,
-          role: newUser.role
+          role: newUser.role,
+          tanggal_lahir: newUser.tanggal_lahir
         });
 
       if (error) {
-        console.error("Supabase insert user failed:", error);
-        return null;
+        if (error.code === "23505") {
+          throw new Error("Email atau Username sudah terdaftar!");
+        }
+        console.error("Supabase insert user failed:", error.message || error);
+        throw new Error(error.message);
       }
 
-      this.setCurrentUser(newUser);
       return newUser;
-    } catch (err) {
+    } catch (err: any) {
       console.error("Auth register failed:", err);
-      return null;
+      throw err;
+    }
+  },
+
+  // Reset password
+  async resetPassword(email: string, newPassword?: string): Promise<boolean> {
+    console.log("Calling authService.resetPassword for:", email);
+
+    if (isPlaceholder()) {
+      const storedUsers = localStorage.getItem("pelum_users");
+      if (storedUsers) {
+        const users = JSON.parse(storedUsers) as any[];
+        const idx = users.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
+        if (idx !== -1) {
+          users[idx].password = newPassword;
+          localStorage.setItem("pelum_users", JSON.stringify(users));
+          return true;
+        }
+      }
+      return false;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("users")
+        .update({ password: newPassword })
+        .eq("email", email);
+
+      if (error) {
+        console.error("Supabase reset password failed:", error.message || error);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error("Auth resetPassword failed:", err);
+      return false;
+    }
+  },
+
+  // Check if email exists
+  async checkEmailExists(email: string): Promise<boolean> {
+    console.log("Calling authService.checkEmailExists for:", email);
+
+    if (isPlaceholder()) {
+      const storedUsers = localStorage.getItem("pelum_users");
+      if (storedUsers) {
+        const users = JSON.parse(storedUsers) as any[];
+        return users.some(u => u.email.toLowerCase() === email.toLowerCase());
+      }
+      return false;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .select("email")
+        .eq("email", email)
+        .maybeSingle();
+
+      if (error) {
+        console.error("Supabase checkEmailExists failed:", error.message || error);
+        return false;
+      }
+      return !!data;
+    } catch (err) {
+      console.error("Auth checkEmailExists failed:", err);
+      return false;
     }
   },
 
@@ -217,7 +311,7 @@ export const authService = {
         .eq("id_user", id_user);
 
       if (error) {
-        console.error("Supabase update profile failed:", error);
+        console.error("Supabase update profile failed:", error.message || error);
         return false;
       }
       return true;

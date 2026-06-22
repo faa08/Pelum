@@ -14,7 +14,7 @@ import {
   RotateCcw, 
   User,
   Ticket,
-  Briefcase,
+  Share2,
   LogOut 
 } from "lucide-react";
 import { authService } from "@/backend/authService";
@@ -27,43 +27,7 @@ interface Notification {
   unread: boolean;
 }
 
-const INITIAL_NOTIFICATIONS: Notification[] = [
-  {
-    id: "1",
-    text: "satriyo0997 membuat penawaran baru pada produk Anda",
-    time: "21 jam yang lalu",
-    type: "offer",
-    unread: true,
-  },
-  {
-    id: "2",
-    text: "Penawaran Anda telah diterima! Buka transaksi untuk berkoordinasi.",
-    time: "23 jam yang lalu",
-    type: "accepted",
-    unread: true,
-  },
-  {
-    id: "3",
-    text: "Pesan baru dari toko Sugar",
-    time: "1 hari yang lalu",
-    type: "message",
-    unread: false,
-  },
-  {
-    id: "4",
-    text: "MuhammadJesen mengirimkan penawaran harga",
-    time: "1 hari yang lalu",
-    type: "offer",
-    unread: false,
-  },
-  {
-    id: "5",
-    text: "Pesan baru dari wuajitrade",
-    time: "2 hari yang lalu",
-    type: "message",
-    unread: false,
-  }
-];
+const INITIAL_NOTIFICATIONS: Notification[] = [];
 
 export default function Navbar({ searchQuery, setSearchQuery }: { searchQuery?: string; setSearchQuery?: (q: string) => void }) {
   const router = useRouter();
@@ -242,10 +206,6 @@ export default function Navbar({ searchQuery, setSearchQuery }: { searchQuery?: 
                       <p className="notif-empty-desc">
                         Semua notifikasi baru akan muncul di sini.
                       </p>
-                      <button className="notif-empty-reset" onClick={handleReset}>
-                        <RotateCcw size={12} />
-                        <span>Simulasikan Notifikasi</span>
-                      </button>
                     </div>
                   )}
                 </div>
@@ -259,14 +219,14 @@ export default function Navbar({ searchQuery, setSearchQuery }: { searchQuery?: 
             /* ── Logged-in: avatar + profile dropdown ── */
             <div className="nav-profile-avatar relative" ref={profileContainerRef}>
               <button
-                className="avatar-circle flex items-center gap-2 px-2"
+                className="flex items-center gap-2 hover:opacity-90 transition"
                 onClick={() => setIsProfileOpen(!isProfileOpen)}
                 aria-expanded={isProfileOpen}
               >
                 {currentUser.avatar ? (
-                  <img src={currentUser.avatar} alt="avatar" className="w-8 h-8 rounded-full object-cover border border-surface-container" />
+                  <img src={currentUser.avatar} alt="avatar" className="w-8 h-8 shrink-0 rounded-full object-cover border border-surface-container" />
                 ) : (
-                  <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white text-sm font-bold">
+                  <div className="w-8 h-8 shrink-0 rounded-full bg-primary flex items-center justify-center text-white text-sm font-bold">
                     {(currentUser.nama_lengkap || currentUser.username || "U").charAt(0).toUpperCase()}
                   </div>
                 )}
@@ -281,9 +241,9 @@ export default function Navbar({ searchQuery, setSearchQuery }: { searchQuery?: 
                   <div className="flex items-center justify-between pb-3 mb-2 border-b border-gray-100 px-1">
                     <div className="flex items-center gap-3">
                       {currentUser.avatar ? (
-                        <img src={currentUser.avatar} alt="avatar" className="w-10 h-10 rounded-full object-cover" />
+                        <img src={currentUser.avatar} alt="avatar" className="w-10 h-10 shrink-0 rounded-full object-cover" />
                       ) : (
-                        <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-white text-lg font-bold">
+                        <div className="w-10 h-10 shrink-0 rounded-full bg-primary flex items-center justify-center text-white text-lg font-bold">
                           {(currentUser.nama_lengkap || currentUser.username || "U").charAt(0).toUpperCase()}
                         </div>
                       )}
@@ -293,11 +253,11 @@ export default function Navbar({ searchQuery, setSearchQuery }: { searchQuery?: 
                       </div>
                     </div>
                     <Link
-                      href="/account/profile"
+                      href={currentUser.role === "admin" ? "/admin/dashboard" : "/account/profile"}
                       onClick={() => setIsProfileOpen(false)}
                       className="px-3.5 py-1.5 bg-[#F5F3F0] hover:bg-[#EBE8E2] transition-colors rounded-full text-xs font-semibold text-gray-700"
                     >
-                      Profil Saya
+                      {currentUser.role === "admin" ? "Dashboard" : "Profil Saya"}
                     </Link>
                   </div>
 
@@ -313,13 +273,14 @@ export default function Navbar({ searchQuery, setSearchQuery }: { searchQuery?: 
                     </Link>
 
                     <Link
-                      href="/account/seller"
+                      href="/account/affiliate"
                       onClick={() => setIsProfileOpen(false)}
                       className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
                     >
-                      <Briefcase className="w-4 h-4 text-gray-400" />
-                      <span>Daftar menjadi Seller</span>
+                      <Share2 className="w-4 h-4 text-gray-400" />
+                      <span>Program Affiliate</span>
                     </Link>
+
 
                     <button
                       onClick={handleLogout}
@@ -363,9 +324,9 @@ export default function Navbar({ searchQuery, setSearchQuery }: { searchQuery?: 
             <div className="flex items-center justify-between pb-4 mb-4 border-b border-[#F5F3F0]">
               <div className="flex items-center gap-3">
                 {currentUser.avatar ? (
-                  <img src={currentUser.avatar} alt="avatar" className="w-11 h-11 rounded-full object-cover border border-[#EAE5E0]" />
+                  <img src={currentUser.avatar} alt="avatar" className="w-11 h-11 shrink-0 rounded-full object-cover border border-[#EAE5E0]" />
                 ) : (
-                  <div className="w-11 h-11 rounded-full bg-primary flex items-center justify-center text-white text-base font-bold">
+                  <div className="w-11 h-11 shrink-0 rounded-full bg-primary flex items-center justify-center text-white text-base font-bold">
                     {(currentUser.nama_lengkap || currentUser.username || "U").charAt(0).toUpperCase()}
                   </div>
                 )}
@@ -375,11 +336,11 @@ export default function Navbar({ searchQuery, setSearchQuery }: { searchQuery?: 
                 </div>
               </div>
               <Link 
-                href="/account/profile"
+                href={currentUser.role === "admin" ? "/admin/dashboard" : "/account/profile"}
                 onClick={() => setIsProfileOpen(false)}
                 className="px-4 py-2 bg-[#F5F3F0] hover:bg-[#EBE8E2] transition-colors rounded-full text-xs font-bold text-[#5C5550]"
               >
-                Profil Saya
+                {currentUser.role === "admin" ? "Dashboard" : "Profil Saya"}
               </Link>
             </div>
 
@@ -395,13 +356,14 @@ export default function Navbar({ searchQuery, setSearchQuery }: { searchQuery?: 
               </Link>
 
               <Link
-                href="/account/seller"
+                href="/account/affiliate"
                 onClick={() => setIsProfileOpen(false)}
                 className="flex items-center gap-4 px-4 py-3.5 rounded-xl text-sm font-bold text-[#5C5550] hover:bg-gray-50 transition-colors border border-gray-100/50"
               >
-                <Briefcase className="w-5 h-5 text-[#8E8680]" />
-                <span>Daftar menjadi Seller</span>
+                <Share2 className="w-5 h-5 text-[#8E8680]" />
+                <span>Program Affiliate</span>
               </Link>
+
 
               <button
                 onClick={handleLogout}

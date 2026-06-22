@@ -29,12 +29,60 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  // Redirect if already logged in
+  useEffect(() => {
+    const currentUser = authService.getCurrentUser();
+    if (currentUser) {
+      if (currentUser.role === "admin") {
+        router.push("/admin/dashboard");
+      } else {
+        router.push("/account/profile");
+      }
+    }
+  }, [router]);
 
   useEffect(() => {
     const err = searchParams.get("error");
     if (err === "oauth_failed") setErrorMsg("Login Google gagal. Silakan coba lagi.");
     if (err === "no_supabase") setErrorMsg("Login Google tidak tersedia pada mode lokal.");
+    const msg = searchParams.get("msg");
+    if (msg === "please_login") setErrorMsg("Silakan login terlebih dahulu untuk mengakses halaman tersebut.");
   }, [searchParams]);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg("");
+
+    if (!email.trim()) {
+      setErrorMsg("Alamat email wajib diisi.");
+      return;
+    }
+    if (!password.trim()) {
+      setErrorMsg("Kata sandi wajib diisi.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const user = await authService.login(email, password);
+      if (user) {
+        if (user.role === "admin") {
+          router.push("/admin/dashboard");
+        } else {
+          router.push("/account/profile");
+        }
+      } else {
+        setErrorMsg("Login gagal! Email atau kata sandi salah. Silakan periksa kembali.");
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || "Terjadi kesalahan saat login. Silakan coba lagi.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div style={{ minHeight: "100vh", background: "#F0EDEA", display: "flex", flexDirection: "column" }}>
@@ -48,6 +96,7 @@ function LoginForm() {
           display: "flex",
           width: "100%",
           maxWidth: 900,
+          minHeight: 620,
           borderRadius: 16,
           overflow: "hidden",
           boxShadow: "0 8px 40px rgba(0,0,0,0.10)",
@@ -96,6 +145,7 @@ function LoginForm() {
           <div style={{
             flex: 1,
             background: "white",
+            borderLeft: `1px solid ${C.border}`,
             padding: "48px 40px",
             display: "flex",
             flexDirection: "column",
@@ -110,28 +160,14 @@ function LoginForm() {
               </div>
             )}
 
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              const user = await authService.login(email);
-              if (user) {
-                if (user.role === "admin") {
-                  router.push("/admin/dashboard");
-                } else if (user.role === "seller") {
-                  router.push("/seller/dashboard");
-                } else {
-                  router.push("/account/profile");
-                }
-              } else {
-                alert("Email tidak ditemukan! Silakan daftar terlebih dahulu.");
-              }
-            }} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
               {/* Email */}
               <div>
                 <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 700, color: C.text, marginBottom: 8 }}>
                   Alamat Email
                 </label>
-                <div style={{ display: "flex", alignItems: "center", border: `1.5px solid ${C.borderStrong}`, borderRadius: 8, overflow: "hidden", background: "white" }}>
+                <div style={{ display: "flex", alignItems: "center", border: `1.5px solid ${C.borderStrong}`, borderRadius: 8, overflow: "hidden", background: "white", height: 48 }}>
                   <span style={{ padding: "0 14px", color: C.textMuted, display: "flex", alignItems: "center" }}>
                     <Mail size={16} />
                   </span>
@@ -139,8 +175,9 @@ function LoginForm() {
                     type="email"
                     placeholder="nama@email.com"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    style={{ flex: 1, border: "none", outline: "none", height: 46, fontSize: "0.875rem", color: C.text, fontFamily: "inherit", background: "transparent" }}
+                    onChange={(e) => { setEmail(e.target.value); setErrorMsg(""); }}
+                    disabled={loading}
+                    style={{ flex: 1, border: "none", outline: "none", height: "100%", fontSize: "0.875rem", color: C.text, fontFamily: "inherit", background: "transparent" }}
                   />
                 </div>
               </div>
@@ -151,7 +188,7 @@ function LoginForm() {
                   <label style={{ fontSize: "0.8125rem", fontWeight: 700, color: C.text }}>Kata Sandi</label>
                   <Link href="/lupa-sandi" style={{ fontSize: "0.75rem", fontWeight: 600, color: C.primary, textDecoration: "none" }}>Lupa Password?</Link>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", border: `1.5px solid ${C.borderStrong}`, borderRadius: 8, overflow: "hidden", background: "white" }}>
+                <div style={{ display: "flex", alignItems: "center", border: `1.5px solid ${C.borderStrong}`, borderRadius: 8, overflow: "hidden", background: "white", height: 48 }}>
                   <span style={{ padding: "0 14px", color: C.textMuted, display: "flex", alignItems: "center" }}>
                     <Lock size={16} />
                   </span>
@@ -159,13 +196,14 @@ function LoginForm() {
                     type={showPass ? "text" : "password"}
                     placeholder="••••••••"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    style={{ flex: 1, border: "none", outline: "none", height: 46, fontSize: "0.875rem", color: C.text, fontFamily: "inherit", background: "transparent" }}
+                    onChange={(e) => { setPassword(e.target.value); setErrorMsg(""); }}
+                    disabled={loading}
+                    style={{ flex: 1, border: "none", outline: "none", height: "100%", fontSize: "0.875rem", color: C.text, fontFamily: "inherit", background: "transparent" }}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPass(!showPass)}
-                    style={{ padding: "0 14px", background: "none", border: "none", cursor: "pointer", color: C.textMuted, display: "flex", alignItems: "center" }}
+                    style={{ padding: "0 14px", background: "none", border: "none", cursor: "pointer", color: C.textMuted, display: "flex", alignItems: "center", height: "100%" }}
                   >
                     {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
@@ -178,6 +216,7 @@ function LoginForm() {
                   type="checkbox"
                   checked={remember}
                   onChange={(e) => setRemember(e.target.checked)}
+                  disabled={loading}
                   style={{ width: 16, height: 16, accentColor: C.primary, cursor: "pointer" }}
                 />
                 <span style={{ fontSize: "0.8125rem", color: C.textSec }}>Ingat saya untuk login berikutnya</span>
@@ -186,13 +225,16 @@ function LoginForm() {
               {/* Submit */}
               <button
                 type="submit"
+                disabled={loading}
                 style={{
-                  width: "100%", height: 50, background: C.primary, color: "white",
-                  border: "none", borderRadius: 8, fontSize: "0.9rem", fontWeight: 800,
-                  cursor: "pointer", letterSpacing: "0.04em", fontFamily: "inherit",
+                  width: "100%", height: 48, background: loading ? C.primaryDark : C.primary, color: "white",
+                  border: "none", borderRadius: 8, fontSize: "0.875rem", fontWeight: 700,
+                  cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit",
+                  opacity: loading ? 0.8 : 1,
+                  transition: "all 0.2s ease",
                 }}
               >
-                MASUK SEKARANG
+                {loading ? "Memproses..." : "MASUK SEKARANG"}
               </button>
 
               {/* Divider */}
@@ -206,10 +248,11 @@ function LoginForm() {
               <button
                 type="button"
                 onClick={() => authService.loginWithGoogle()}
+                disabled={loading}
                 style={{
-                  width: "100%", height: 44, border: `1.5px solid ${C.borderStrong}`, borderRadius: 8,
+                  width: "100%", height: 48, border: `1.5px solid ${C.borderStrong}`, borderRadius: 8,
                   background: "white", fontSize: "0.875rem", fontWeight: 600, color: C.text,
-                  cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                  cursor: loading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center",
                   gap: 8, fontFamily: "inherit",
                 }}
               >

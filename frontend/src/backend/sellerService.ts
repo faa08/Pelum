@@ -1,5 +1,4 @@
 import { supabase } from "./supabase";
-import { authService, User } from "./authService";
 
 export interface Seller {
   id_seller: string;
@@ -10,13 +9,9 @@ export interface Seller {
   email: string;
   no_telp: string;
   addr: string;
-  img_ktp: string;
-  nik_ktp: string;
-  nib: string;
   nama_bank: string;
   no_rek: string;
   atas_nama_rek: string;
-  is_verified: boolean;
   created_at: string;
 }
 
@@ -53,120 +48,7 @@ export const sellerService = {
     }
   },
 
-  // Register user as seller
-  async registerSeller(
-    userId: string,
-    nm_store: string,
-    email: string,
-    no_telp: string,
-    nib: string,
-    nik_ktp: string,
-    rekening: string,
-    ktpFileName: string
-  ): Promise<Seller | null> {
-    console.log("Calling sellerService.registerSeller for store:", nm_store);
-
-    const bankParts = rekening.split("-");
-    const nama_bank = bankParts[0]?.trim() || "BCA";
-    const no_rek = bankParts[1]?.trim() || rekening;
-
-    const newSeller: Seller = {
-      id_seller: typeof crypto !== "undefined" ? crypto.randomUUID() : `s-${Math.random().toString(36).substr(2, 9)}`,
-      id_user: userId,
-      nm_store,
-      deskripsi: `Selamat datang di ${nm_store}`,
-      logo_toko: "https://images.unsplash.com/photo-1513519245088-0e12902e5a38?q=80&w=100&auto=format&fit=crop",
-      email,
-      no_telp,
-      addr: "Indonesia",
-      img_ktp: ktpFileName,
-      nik_ktp,
-      nib,
-      nama_bank,
-      no_rek,
-      atas_nama_rek: "Pemilik Toko",
-      is_verified: false, // verification queue
-      created_at: new Date().toISOString()
-    };
-
-    if (isPlaceholder()) {
-      console.warn("Using fallback local storage register seller");
-      const stored = localStorage.getItem("pelum_sellers");
-      const sellers = stored ? JSON.parse(stored) : [];
-      sellers.push(newSeller);
-      localStorage.setItem("pelum_sellers", JSON.stringify(sellers));
-
-      // Sync role change in local storage user
-      const currentUser = authService.getCurrentUser();
-      if (currentUser && currentUser.id_user === userId) {
-        currentUser.role = "seller";
-        authService.setCurrentUser(currentUser);
-      }
-
-      const storedUsers = localStorage.getItem("pelum_users");
-      if (storedUsers) {
-        const users = JSON.parse(storedUsers) as User[];
-        const idx = users.findIndex(u => u.id_user === userId);
-        if (idx !== -1) {
-          users[idx].role = "seller";
-          localStorage.setItem("pelum_users", JSON.stringify(users));
-        }
-      }
-      return newSeller;
-    }
-
-    try {
-      // 1. Insert seller record
-      const { error: insertErr } = await supabase
-        .from("seller")
-        .insert({
-          id_seller: newSeller.id_seller,
-          id_user: newSeller.id_user,
-          nm_store: newSeller.nm_store,
-          deskripsi: newSeller.deskripsi,
-          logo_toko: newSeller.logo_toko,
-          email: newSeller.email,
-          no_telp: newSeller.no_telp,
-          addr: newSeller.addr,
-          img_ktp: newSeller.img_ktp,
-          nik_ktp: newSeller.nik_ktp,
-          nib: newSeller.nib,
-          nama_bank: newSeller.nama_bank,
-          no_rek: newSeller.no_rek,
-          atas_nama_rek: newSeller.atas_nama_rek,
-          is_verified: newSeller.is_verified
-        });
-
-      if (insertErr) {
-        console.error("Supabase insert seller error:", insertErr);
-        return null;
-      }
-
-      // 2. Update user role in users table to 'seller'
-      const { error: updateErr } = await supabase
-        .from("users")
-        .update({ role: "seller" })
-        .eq("id_user", userId);
-
-      if (updateErr) {
-        console.error("Supabase update user role to seller failed:", updateErr);
-      }
-
-      // 3. Update current logged-in user state
-      const currentUser = authService.getCurrentUser();
-      if (currentUser && currentUser.id_user === userId) {
-        currentUser.role = "seller";
-        authService.setCurrentUser(currentUser);
-      }
-
-      return newSeller;
-    } catch (err) {
-      console.error("sellerService registerSeller request failed:", err);
-      return null;
-    }
-  },
-
-  // Get all sellers (for superadmin verification list)
+  // Get all sellers/stores (for superadmin management)
   async getSellers(): Promise<Seller[]> {
     console.log("Calling sellerService.getSellers");
 
@@ -192,38 +74,93 @@ export const sellerService = {
     }
   },
 
-  // Verify / Approve / Reject seller store
-  async verifySeller(sellerId: string, isVerified: boolean): Promise<boolean> {
-    console.log(`Calling sellerService.verifySeller for seller ID ${sellerId} with status ${isVerified}`);
+  // Get seller by ID or slug/name
+  async getSellerByIdOrSlug(idOrSlug: string): Promise<Seller | null> {
+    console.log("Calling sellerService.getSellerByIdOrSlug:", idOrSlug);
 
     if (isPlaceholder()) {
       const stored = localStorage.getItem("pelum_sellers");
-      if (stored) {
-        const sellers = JSON.parse(stored) as Seller[];
-        const idx = sellers.findIndex(s => s.id_seller === sellerId);
-        if (idx !== -1) {
-          sellers[idx].is_verified = isVerified;
-          localStorage.setItem("pelum_sellers", JSON.stringify(sellers));
-          return true;
-        }
+      const sellers = stored ? JSON.parse(stored) : [];
+      return sellers.find((s: any) => s.id_seller === idOrSlug || s.nm_store?.toLowerCase().replace(/\s+/g, "-") === idOrSlug) || null;
+    }
+
+    try {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrSlug);
+      let query = supabase.from("seller").select("*");
+      if (isUuid) {
+        query = query.eq("id_seller", idOrSlug);
+      } else {
+        query = query.ilike("nm_store", `%${idOrSlug.replace(/-/g, " ")}%`);
       }
-      return false;
+      
+      const { data, error } = await query.limit(1).maybeSingle();
+      if (error) throw error;
+      return data;
+    } catch (err) {
+      console.error("sellerService.getSellerByIdOrSlug failed:", err);
+      return null;
+    }
+  },
+
+  // Admin: Create a new store/toko
+  async createStore(
+    nm_store: string,
+    email: string,
+    no_telp: string,
+    deskripsi: string,
+    addr: string,
+    nama_bank: string,
+    no_rek: string,
+    atas_nama_rek: string
+  ): Promise<Seller | null> {
+    console.log("Calling sellerService.createStore for:", nm_store);
+
+    const newStore: Seller = {
+      id_seller: typeof crypto !== "undefined" ? crypto.randomUUID() : `s-${Math.random().toString(36).substr(2, 9)}`,
+      id_user: "",
+      nm_store,
+      deskripsi: deskripsi || `Selamat datang di ${nm_store}`,
+      logo_toko: "",
+      email,
+      no_telp,
+      addr: addr || "Indonesia",
+      nama_bank,
+      no_rek,
+      atas_nama_rek,
+      created_at: new Date().toISOString()
+    };
+
+    if (isPlaceholder()) {
+      const stored = localStorage.getItem("pelum_sellers");
+      const sellers = stored ? JSON.parse(stored) : [];
+      sellers.push(newStore);
+      localStorage.setItem("pelum_sellers", JSON.stringify(sellers));
+      return newStore;
     }
 
     try {
       const { error } = await supabase
         .from("seller")
-        .update({ is_verified: isVerified })
-        .eq("id_seller", sellerId);
+        .insert({
+          id_seller: newStore.id_seller,
+          nm_store: newStore.nm_store,
+          deskripsi: newStore.deskripsi,
+          email: newStore.email,
+          no_telp: newStore.no_telp,
+          addr: newStore.addr,
+          nama_bank: newStore.nama_bank,
+          no_rek: newStore.no_rek,
+          atas_nama_rek: newStore.atas_nama_rek
+        });
 
       if (error) {
-        console.error("Supabase update verify status error:", error);
-        return false;
+        console.error("Supabase insert store error:", error);
+        return null;
       }
-      return true;
+      return newStore;
     } catch (err) {
-      console.error("sellerService verifySeller failed:", err);
-      return false;
+      console.error("sellerService createStore failed:", err);
+      return null;
     }
   }
 };

@@ -51,7 +51,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ============================================================
 -- ENUM TYPES (semua enum didefinisikan di awal)
 -- ============================================================
-CREATE TYPE user_role        AS ENUM ('customer', 'seller');
+CREATE TYPE user_role        AS ENUM ('customer', 'seller', 'admin');
 CREATE TYPE stat_produk_enum AS ENUM ('tersedia', 'tidak tersedia');
 CREATE TYPE stat_order_enum  AS ENUM ('pending', 'diproses', 'dikirim', 'selesai', 'dibatalkan');
 CREATE TYPE stat_retur_enum  AS ENUM ('diajukan', 'disetujui', 'ditolak', 'selesai');
@@ -80,8 +80,8 @@ CREATE TABLE super_admin (
 -- ============================================================
 CREATE TABLE users (
     id_user         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    username        VARCHAR(100) NOT NULL UNIQUE,
-    password        TEXT NOT NULL,
+    username        VARCHAR(100) UNIQUE,
+    password        TEXT,
     email           VARCHAR(150) NOT NULL UNIQUE,
     nama_lengkap    VARCHAR(200),
     no_telp         VARCHAR(20),
@@ -376,22 +376,22 @@ CREATE TRIGGER trg_retur_updated_at
 -- ============================================================
 -- ROW LEVEL SECURITY (RLS)
 -- ============================================================
-ALTER TABLE super_admin     ENABLE ROW LEVEL SECURITY;
-ALTER TABLE users           ENABLE ROW LEVEL SECURITY;
-ALTER TABLE seller          ENABLE ROW LEVEL SECURITY;
-ALTER TABLE alamat          ENABLE ROW LEVEL SECURITY;
-ALTER TABLE kategori        ENABLE ROW LEVEL SECURITY;
-ALTER TABLE produk          ENABLE ROW LEVEL SECURITY;
-ALTER TABLE review          ENABLE ROW LEVEL SECURITY;
-ALTER TABLE cart            ENABLE ROW LEVEL SECURITY;
-ALTER TABLE cart_item       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "order"         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE order_item      ENABLE ROW LEVEL SECURITY;
-ALTER TABLE review_toko     ENABLE ROW LEVEL SECURITY;
-ALTER TABLE retur           ENABLE ROW LEVEL SECURITY;
-ALTER TABLE payment         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE pengiriman      ENABLE ROW LEVEL SECURITY;
-ALTER TABLE saldo_seller    ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE super_admin     ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE users           ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE seller          ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE alamat          ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE kategori        ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE produk          ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE review          ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE cart            ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE cart_item       ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE "order"         ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE order_item      ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE review_toko     ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE retur           ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE payment         ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE pengiriman      ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE saldo_seller    ENABLE ROW LEVEL SECURITY;
 
 
 -- ============================================================
@@ -577,9 +577,9 @@ CREATE TABLE support_ticket (
 );
 
 -- Enable RLS
-ALTER TABLE chat_room       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE chat_message    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE support_ticket  ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE chat_room       ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE chat_message    ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE support_ticket  ENABLE ROW LEVEL SECURITY;
 
 -- Policies for chat_room
 CREATE POLICY "Users can view own chat rooms"

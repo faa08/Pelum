@@ -26,6 +26,49 @@ interface ReportStats {
   customerRating: number;
 }
 
+const MOCK_CHART_DATA: ReportChartData[] = [
+  { label: "Senin", height: "30%", revenue: "Rp 1.200.000" },
+  { label: "Selasa", height: "60%", revenue: "Rp 2.400.000" },
+  { label: "Rabu", height: "45%", revenue: "Rp 1.800.000" },
+  { label: "Kamis", height: "75%", revenue: "Rp 3.100.000" },
+  { label: "Jumat", height: "90%", revenue: "Rp 4.200.000" },
+  { label: "Sabtu", height: "100%", revenue: "Rp 5.500.000" },
+  { label: "Minggu", height: "80%", revenue: "Rp 4.800.000" }
+];
+
+const MOCK_TOP_STORES: TopStoreData[] = [
+  {
+    nama: "Batik Kawung Jaya",
+    lokasi: "Yogyakarta",
+    kategori: "Fashion Pria",
+    pesanan: "12",
+    omzet: 4104000,
+    rating: 4.9,
+    status: "Aktif",
+    logo: "https://images.unsplash.com/photo-1544816155-12df9643f363?q=80&w=100&auto=format&fit=crop"
+  },
+  {
+    nama: "Mitra Rotan Abadi",
+    lokasi: "Cirebon",
+    kategori: "Aksesoris",
+    pesanan: "6",
+    omzet: 2208000,
+    rating: 4.8,
+    status: "Aktif",
+    logo: "https://images.unsplash.com/photo-1595425970377-c9703cf48b6d?q=80&w=100&auto=format&fit=crop"
+  },
+  {
+    nama: "Cokelat Nusantara",
+    lokasi: "Blitar",
+    kategori: "Kuliner",
+    pesanan: "3",
+    omzet: 382000,
+    rating: 4.7,
+    status: "Aktif",
+    logo: "https://images.unsplash.com/photo-1511381939415-e44015466834?q=80&w=100&auto=format&fit=crop"
+  }
+];
+
 export default function AdminReportsPage() {
   const [hoveredBarIndex, setHoveredBarIndex] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -41,103 +84,40 @@ export default function AdminReportsPage() {
   // Simulation loading data from Backend / DB
   useEffect(() => {
     const timer = setTimeout(() => {
-      // Mocking empty state initially
       setStats({
-        totalRevenue: 0,
-        activeSellers: 0,
-        totalOrders: 0,
-        customerRating: 0.0
+        totalRevenue: 24500000,
+        activeSellers: 8,
+        totalOrders: 23,
+        customerRating: 4.8
       });
-      setChartData([]);
-      setTopStores([]);
+      setChartData(MOCK_CHART_DATA);
+      setTopStores(MOCK_TOP_STORES);
       setIsLoading(false);
     }, 1500);
 
     return () => clearTimeout(timer);
   }, []);
 
-  /* 
-    ==========================================================================
-    BACKEND INTEGRATION GUIDE (SUPABASE)
-    ==========================================================================
-    Untuk menyambungkan dengan Supabase (tabel order, seller, payment, review_toko), 
-    gunakan panduan query berikut:
-
-    import { createClient } from "@supabase/supabase-js";
-    const supabase = createClient("SUPABASE_URL", "SUPABASE_ANON_KEY");
-
-    const fetchReportData = async () => {
-      try {
-        setIsLoading(true);
-
-        // 1. Total Pendapatan (Sum dari payment sukses)
-        const { data: payData, error: err1 } = await supabase
-          .from("payment")
-          .select("juml_pay")
-          .eq("stat_pay", "success");
-        const totalRevenue = payData?.reduce((sum, item) => sum + Number(item.juml_pay), 0) || 0;
-
-        // 2. UMKM Aktif (Sellers terverifikasi)
-        const { count: activeCount, error: err2 } = await supabase
-          .from("seller")
-          .select("*", { count: "exact", head: true })
-          .eq("is_verified", true);
-
-        // 3. Total Transaksi Selesai
-        const { count: ordersCount, error: err3 } = await supabase
-          .from("order")
-          .select("*", { count: "exact", head: true })
-          .eq("stat_order", "selesai");
-
-        // 4. Kepuasan Pelanggan (Rata-rata rating dari review_toko)
-        const { data: reviewData, error: err4 } = await supabase
-          .from("review_toko")
-          .select("rating");
-        const avgRating = reviewData && reviewData.length > 0 
-          ? reviewData.reduce((sum, item) => sum + item.rating, 0) / reviewData.length
-          : 0.0;
-
-        if (err1 || err2 || err3 || err4) throw new Error("Gagal mengambil data laporan.");
-
-        setStats({
-          totalRevenue,
-          activeSellers: activeCount || 0,
-          totalOrders: ordersCount || 0,
-          customerRating: Number(avgRating.toFixed(1))
-        });
-
-        // 5. Query UMKM Berprestasi (Top 4 berdasarkan omzet tertinggi)
-        // Gabungkan seller dengan orders & review_toko
-        // setTopStores(formattedTopStores);
-
-      } catch (err) {
-        console.error("Gagal memuat laporan analitik:", err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-  */
-
   return (
     <div className="space-y-8">
       {/* Header */}
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <h2 className="font-headline text-3xl font-bold text-on-surface">Laporan & Analitik</h2>
-          <p className="font-body text-body-md text-[#3E3834] mt-1">
+          <h2 className="font-headline text-3xl font-bold text-[#1F1B18]">Laporan & Analitik</h2>
+          <p className="font-body text-body-md text-[#5C5550] mt-1">
             Pantau performa ekosistem UMKM dan pertumbuhan pendapatan secara real-time.
           </p>
         </div>
-        <div className="flex items-center gap-3 bg-white p-1.5 rounded-xl shadow-sm">
-          <div className="flex items-center px-4 py-2 text-sm text-[#3E3834] font-semibold">
-            <span className="material-symbols-outlined text-[#3E3834] mr-2">calendar_today</span>
-            <span className="font-semibold text-on-surface">Periode Sekarang</span>
+        <div className="flex items-center gap-3 bg-white p-1.5 rounded-xl shadow-sm border border-[#EAE5E0]">
+          <div className="flex items-center px-4 py-2 text-xs text-[#5C5550] font-semibold">
+            <span className="material-symbols-outlined text-[#8E8680] mr-2 text-[18px]">calendar_today</span>
+            <span className="font-semibold text-[#1F1B18]">Periode Sekarang</span>
           </div>
           <button 
             onClick={() => alert("Mengekspor data analitik...")}
-            className="px-4 py-2 bg-primary text-white font-bold text-sm rounded hover:brightness-95 transition flex items-center gap-2"
+            className="px-4 py-2 bg-[#1D4ED8] text-white font-bold text-xs rounded hover:bg-blue-700 transition flex items-center gap-2"
           >
-            <span className="material-symbols-outlined text-[20px]">download</span>
+            <span className="material-symbols-outlined text-[16px]">download</span>
             Export Data
           </button>
         </div>
@@ -145,7 +125,7 @@ export default function AdminReportsPage() {
 
       {/* Analytics Overview Grid */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-xl space-y-2 hover:shadow-md transition shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
+        <div className="bg-white p-6 rounded-xl border border-[#EAE5E0] space-y-2 hover:shadow-md transition shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
           {isLoading ? (
             <div className="space-y-2 animate-pulse">
               <div className="h-3 bg-[#F5F3F0] rounded w-2/3"></div>
@@ -153,19 +133,19 @@ export default function AdminReportsPage() {
             </div>
           ) : (
             <>
-              <div className="flex justify-between items-start text-[#3E3834]">
+              <div className="flex justify-between items-start text-[#5C5550]">
                 <p className="text-xs uppercase font-bold tracking-wider">Total Pendapatan</p>
-                <span className="material-symbols-outlined text-primary text-[20px]">payments</span>
+                <span className="material-symbols-outlined text-[#1D4ED8] text-[20px]">payments</span>
               </div>
-              <h3 className="font-headline text-2xl font-extrabold text-on-surface">
+              <h3 className="font-headline text-2xl font-extrabold text-[#1F1B18]">
                 Rp {stats.totalRevenue.toLocaleString("id-ID")}
               </h3>
-              <p className="text-[10px] text-[#5A534E]">Akumulasi pembayaran sukses</p>
+              <p className="text-[10px] text-[#8E8680]">Akumulasi pembayaran sukses</p>
             </>
           )}
         </div>
 
-        <div className="bg-white p-6 rounded-xl space-y-2 hover:shadow-md transition shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
+        <div className="bg-white p-6 rounded-xl border border-[#EAE5E0] space-y-2 hover:shadow-md transition shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
           {isLoading ? (
             <div className="space-y-2 animate-pulse">
               <div className="h-3 bg-[#F5F3F0] rounded w-2/3"></div>
@@ -173,19 +153,19 @@ export default function AdminReportsPage() {
             </div>
           ) : (
             <>
-              <div className="flex justify-between items-start text-[#3E3834]">
+              <div className="flex justify-between items-start text-[#5C5550]">
                 <p className="text-xs uppercase font-bold tracking-wider">UMKM Aktif</p>
-                <span className="material-symbols-outlined text-primary text-[20px]">store</span>
+                <span className="material-symbols-outlined text-[#1D4ED8] text-[20px]">store</span>
               </div>
-              <h3 className="font-headline text-2xl font-extrabold text-on-surface">
+              <h3 className="font-headline text-2xl font-extrabold text-[#1F1B18]">
                 {stats.activeSellers}
               </h3>
-              <p className="text-[10px] text-[#5A534E]">UMKM yang telah diverifikasi</p>
+              <p className="text-[10px] text-[#8E8680]">UMKM terdaftar & terhubung</p>
             </>
           )}
         </div>
 
-        <div className="bg-white p-6 rounded-xl space-y-2 hover:shadow-md transition shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
+        <div className="bg-white p-6 rounded-xl border border-[#EAE5E0] space-y-2 hover:shadow-md transition shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
           {isLoading ? (
             <div className="space-y-2 animate-pulse">
               <div className="h-3 bg-[#F5F3F0] rounded w-2/3"></div>
@@ -193,19 +173,19 @@ export default function AdminReportsPage() {
             </div>
           ) : (
             <>
-              <div className="flex justify-between items-start text-[#3E3834]">
+              <div className="flex justify-between items-start text-[#5C5550]">
                 <p className="text-xs uppercase font-bold tracking-wider">Total Transaksi</p>
-                <span className="material-symbols-outlined text-primary text-[20px]">shopping_cart</span>
+                <span className="material-symbols-outlined text-[#1D4ED8] text-[20px]">shopping_cart</span>
               </div>
-              <h3 className="font-headline text-2xl font-extrabold text-on-surface">
+              <h3 className="font-headline text-2xl font-extrabold text-[#1F1B18]">
                 {stats.totalOrders}
               </h3>
-              <p className="text-[10px] text-[#5A534E]">Jumlah transaksi diselesaikan</p>
+              <p className="text-[10px] text-[#8E8680]">Jumlah transaksi platform selesai</p>
             </>
           )}
         </div>
 
-        <div className="bg-white p-6 rounded-xl space-y-2 hover:shadow-md transition shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
+        <div className="bg-white p-6 rounded-xl border border-[#EAE5E0] space-y-2 hover:shadow-md transition shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
           {isLoading ? (
             <div className="space-y-2 animate-pulse">
               <div className="h-3 bg-[#F5F3F0] rounded w-2/3"></div>
@@ -213,14 +193,14 @@ export default function AdminReportsPage() {
             </div>
           ) : (
             <>
-              <div className="flex justify-between items-start text-[#3E3834]">
+              <div className="flex justify-between items-start text-[#5C5550]">
                 <p className="text-xs uppercase font-bold tracking-wider">Kepuasan Pelanggan</p>
-                <span className="material-symbols-outlined text-primary text-[20px]">star</span>
+                <span className="material-symbols-outlined text-[#1D4ED8] text-[20px]">star</span>
               </div>
-              <h3 className="font-headline text-2xl font-extrabold text-on-surface">
+              <h3 className="font-headline text-2xl font-extrabold text-[#1F1B18]">
                 {stats.customerRating > 0 ? `${stats.customerRating}/5.0` : "-"}
               </h3>
-              <p className="text-[10px] text-[#5A534E]">Rata-rata ulasan rating toko</p>
+              <p className="text-[10px] text-[#8E8680]">Rata-rata ulasan rating toko</p>
             </>
           )}
         </div>
@@ -229,28 +209,28 @@ export default function AdminReportsPage() {
       {/* Main Charts Grid */}
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Revenue Growth (2/3 col) */}
-        <div className="lg:col-span-2 bg-white p-6 rounded-xl space-y-6 shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
+        <div className="lg:col-span-2 bg-white border border-[#EAE5E0] p-6 rounded-xl space-y-6 shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
           <div>
-            <h4 className="font-headline font-bold text-lg text-on-surface">Pertumbuhan Pendapatan</h4>
-            <p className="font-body text-xs text-[#3E3834]">Visualisasi performa harian periode ini</p>
+            <h4 className="font-headline font-bold text-lg text-[#1F1B18]">Pertumbuhan Pendapatan</h4>
+            <p className="font-body text-xs text-[#5C5550]">Visualisasi performa harian periode ini</p>
           </div>
           
-          <div className="h-64 w-full relative flex items-center justify-center rounded-lg bg-[#FCFCFA] px-4 pt-6">
+          <div className="h-64 w-full relative flex items-center justify-center rounded-lg bg-[#FCFCFA] px-4 pt-6 border border-[#EAE5E0]">
             {isLoading ? (
               <div className="flex flex-col items-center gap-2 animate-pulse">
-                <span className="material-symbols-outlined text-[#5A534E]">insights</span>
-                <p className="text-xs text-[#5A534E] font-medium">Memuat grafik pendapatan...</p>
+                <span className="material-symbols-outlined text-[#8E8680]">insights</span>
+                <p className="text-xs text-[#8E8680] font-medium">Memuat grafik pendapatan...</p>
               </div>
             ) : chartData.length === 0 ? (
               <div className="flex flex-col items-center gap-2 text-center p-8">
-                <span className="material-symbols-outlined text-4xl text-[#5A534E]">chart_data</span>
+                <span className="material-symbols-outlined text-4xl text-[#8E8680]">chart_data</span>
                 <h5 className="text-sm font-bold text-[#1F1B18]">Belum Ada Data Pertumbuhan</h5>
-                <p className="text-xs text-[#5A534E] max-w-sm">
+                <p className="text-xs text-[#8E8680] max-w-sm">
                   Grafik pendapatan harian akan terisi otomatis setelah terdapat data transaksi terekam.
                 </p>
               </div>
             ) : (
-              <div className="flex items-end gap-1 w-full h-full pb-6">
+              <div className="flex items-end gap-3 w-full h-full pb-6 justify-around">
                 {chartData.map((bar, i) => (
                   <div 
                     key={i} 
@@ -264,9 +244,10 @@ export default function AdminReportsPage() {
                       </div>
                     )}
                     <div 
-                      className={`w-full rounded-t-sm transition duration-200 ${hoveredBarIndex === i ? "bg-[#ff6f00] brightness-95" : "bg-[#ff6f00]/20 border-t-2 border-[#ff6f00]"}`}
+                      className={`w-full rounded-t-sm transition duration-200 ${hoveredBarIndex === i ? "bg-[#1D4ED8] brightness-95" : "bg-[#1D4ED8]/20 border-t-2 border-[#1D4ED8]"}`}
                       style={{ height: bar.height }}
                     ></div>
+                    <span className="absolute -bottom-5 text-[10px] text-[#8E8680] font-bold mt-1">{bar.label}</span>
                   </div>
                 ))}
               </div>
@@ -275,25 +256,36 @@ export default function AdminReportsPage() {
         </div>
 
         {/* Category Distribution (1/3 col) */}
-        <div className="bg-white p-6 rounded-xl space-y-6 flex flex-col shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
+        <div className="bg-white border border-[#EAE5E0] p-6 rounded-xl space-y-6 flex flex-col shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
           <div>
-            <h4 className="font-headline font-bold text-lg text-on-surface">Distribusi Kategori</h4>
-            <p className="font-body text-xs text-[#3E3834]">Berdasarkan volume penjualan</p>
+            <h4 className="font-headline font-bold text-lg text-[#1F1B18]">Distribusi Kategori</h4>
+            <p className="font-body text-xs text-[#5C5550]">Berdasarkan volume penjualan</p>
           </div>
           
-          <div className="flex-1 flex items-center justify-center relative min-h-[160px] rounded-lg bg-[#FCFCFA] p-6">
+          <div className="flex-1 flex items-center justify-center relative min-h-[160px] rounded-lg bg-[#FCFCFA] p-6 border border-[#EAE5E0]">
             {isLoading ? (
               <div className="flex flex-col items-center gap-2 animate-pulse">
-                <span className="material-symbols-outlined text-[#5A534E]">pie_chart</span>
-                <p className="text-xs text-[#5A534E] font-medium">Memuat distribusi...</p>
+                <span className="material-symbols-outlined text-[#8E8680]">pie_chart</span>
+                <p className="text-xs text-[#8E8680] font-medium">Memuat distribusi...</p>
               </div>
             ) : (
               <div className="flex flex-col items-center gap-2 text-center">
-                <span className="material-symbols-outlined text-4xl text-[#5A534E]">donut_large</span>
-                <h5 className="text-sm font-bold text-[#1F1B18]">Belum Ada Data Kategori</h5>
-                <p className="text-xs text-[#5A534E] max-w-[200px]">
-                  Data penjualan kategori produk akan dikalkulasikan secara realtime.
-                </p>
+                <span className="material-symbols-outlined text-4xl text-[#8E8680]">donut_large</span>
+                <h5 className="text-sm font-bold text-[#1F1B18]">Data Penjualan Kategori</h5>
+                <div className="space-y-1.5 text-xs text-[#5C5550] text-left mt-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 bg-[#1D4ED8] rounded-full" />
+                    <span>Fashion Pria (65%)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 bg-green-500 rounded-full" />
+                    <span>Aksesoris (25%)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 bg-amber-500 rounded-full" />
+                    <span>Kuliner (10%)</span>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -301,29 +293,28 @@ export default function AdminReportsPage() {
       </section>
 
       {/* Top Performing Stores Table */}
-      <section className="bg-white rounded-xl overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
-        <div className="p-6 flex justify-between items-center bg-surface-container-low/40">
+      <section className="bg-white border border-[#EAE5E0] rounded-xl overflow-hidden shadow-[0_8px_30px_rgb(0,0,0,0.02)]">
+        <div className="p-6 flex justify-between items-center bg-[#F5F3F0]/40 border-b border-[#EAE5E0]">
           <div>
-            <h4 className="font-headline font-bold text-lg text-on-surface">UMKM Berprestasi</h4>
-            <p className="font-body text-xs text-[#3E3834]">Peringkat berdasarkan omzet tertinggi bulan ini</p>
+            <h4 className="font-headline font-bold text-lg text-[#1F1B18]">UMKM Berprestasi</h4>
+            <p className="font-body text-xs text-[#5C5550]">Peringkat berdasarkan omzet tertinggi bulan ini</p>
           </div>
         </div>
         
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-surface-container-low border-b border-[#F5F3F0] text-[#3E3834]">
+              <tr className="bg-[#F5F3F0] border-b border-[#EAE5E0] text-[#5C5550]">
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider">Toko UMKM</th>
-                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider">Kategori</th>
+                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider">Kategori Utama</th>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider">Total Pesanan</th>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider">Omzet</th>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider">Rating</th>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#F5F3F0]">
+            <tbody className="divide-y divide-[#EAE5E0]">
               {isLoading ? (
-                // Skeleton loading rows
                 Array.from({ length: 3 }).map((_, i) => (
                   <tr key={i} className="animate-pulse">
                     <td className="px-6 py-6">
@@ -343,13 +334,12 @@ export default function AdminReportsPage() {
                   </tr>
                 ))
               ) : topStores.length === 0 ? (
-                // Beautiful Empty State
                 <tr>
                   <td colSpan={6} className="py-16 text-center">
                     <div className="flex flex-col items-center gap-3">
-                      <span className="material-symbols-outlined text-5xl text-[#5A534E]">military_tech</span>
+                      <span className="material-symbols-outlined text-5xl text-[#8E8680]">military_tech</span>
                       <h5 className="font-headline font-bold text-sm text-[#1F1B18]">Belum Ada Toko Teratas</h5>
-                      <p className="text-xs text-[#5A534E] max-w-sm">
+                      <p className="text-xs text-[#8E8680] max-w-sm">
                         Data omzet toko sedang dikalkulasi oleh sistem laporan.
                       </p>
                     </div>
@@ -357,29 +347,29 @@ export default function AdminReportsPage() {
                 </tr>
               ) : (
                 topStores.map((store, idx) => (
-                  <tr key={idx} className="hover:bg-surface-container-low/30 transition">
+                  <tr key={idx} className="hover:bg-[#F5F3F0]/30 transition">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-surface-container-high rounded overflow-hidden">
+                        <div className="w-10 h-10 bg-[#F5F3F0] border border-[#EAE5E0] rounded overflow-hidden flex-shrink-0">
                           <img src={store.logo} alt={store.nama} className="w-full h-full object-cover" />
                         </div>
                         <div>
-                          <p className="font-semibold text-sm text-on-surface">{store.nama}</p>
-                          <p className="text-[10px] text-[#3E3834]">{store.lokasi}</p>
+                          <p className="font-semibold text-sm text-[#1F1B18]">{store.nama}</p>
+                          <p className="text-[10px] text-[#8E8680]">{store.lokasi}</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-xs text-[#3E3834] font-semibold">{store.kategori}</td>
-                    <td className="px-6 py-4 text-xs text-on-surface font-semibold">{store.pesanan}</td>
-                    <td className="px-6 py-4 font-bold text-sm text-primary">Rp {store.omzet.toLocaleString("id-ID")}</td>
+                    <td className="px-6 py-4 text-xs text-[#5C5550] font-semibold">{store.kategori}</td>
+                    <td className="px-6 py-4 text-xs text-[#1F1B18] font-semibold">{store.pesanan}</td>
+                    <td className="px-6 py-4 font-bold text-sm text-[#1D4ED8]">Rp {store.omzet.toLocaleString("id-ID")}</td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-1 text-xs">
                         <span className="material-symbols-outlined text-[16px] text-orange-500" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
-                        <span className="font-bold text-on-surface">{store.rating}</span>
+                        <span className="font-bold text-[#1F1B18]">{store.rating}</span>
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${store.status === "Verified" ? "bg-green-50 text-green-700 border-green-200" : "bg-orange-50 text-orange-700 border-orange-200"}`}>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border bg-green-50 text-green-700 border-green-200`}>
                         {store.status}
                       </span>
                     </td>

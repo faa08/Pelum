@@ -1,6 +1,6 @@
-﻿"use client";
+"use client";
 
-import { useState, use } from "react";
+import { useState, use, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { 
@@ -19,6 +19,9 @@ import {
 import Navbar from "@/components/Navbar";
 import SearchBar from "@/components/SearchBar";
 import Footer from "@/components/Footer";
+import { productService } from "@/backend/productService";
+import { cartService } from "@/backend/cartService";
+import { authService } from "@/backend/authService";
 
 // Brand Design Constants
 const C = {
@@ -31,166 +34,6 @@ const C = {
   textSec: "#5C5550",
   textMuted: "#8E8680",
 };
-
-// Mock Products Database
-const ALL_PRODUCTS = [
-  {
-    id: 1,
-    name: "Mangkuk Keramik Motif Megamendung Handmade",
-    category: "Kerajinan",
-    categorySlug: "kerajinan",
-    price: 125000,
-    image: "/product-keramik.png",
-    rating: 4.9,
-    sold: 120,
-    badge: "Bestseller",
-    slug: "mangkuk-keramik-megamendung",
-  },
-  {
-    id: 2,
-    name: "Kopi Toraja Arabika 250g Premium Roasted",
-    category: "Kuliner",
-    categorySlug: "kuliner",
-    price: 85000,
-    image: "/product-kopi.png",
-    rating: 4.8,
-    sold: 340,
-    badge: "Bestseller",
-    slug: "kopi-toraja-arabika-250g",
-  },
-  {
-    id: 3,
-    name: "Dompet Kulit Sapi Asli Handmade Cognac Brown",
-    category: "Fashion",
-    categorySlug: "fashion",
-    price: 210000,
-    image: "/product-dompet.png",
-    rating: 5.0,
-    sold: 50,
-    badge: "Hot",
-    slug: "dompet-kulit-cognac-brown",
-  },
-  {
-    id: 4,
-    name: "Paket Perawatan Wajah Alami Ekstrak Kunyit",
-    category: "Kecantikan",
-    categorySlug: "kecantikan",
-    price: 175000,
-    image: "/product-skincare.png",
-    rating: 4.3,
-    sold: 80,
-    badge: "Bestseller",
-    slug: "skincare-kunyit-alami",
-  },
-  {
-    id: 5,
-    name: "Kain Batik Tulis Motif Truntum Klasik",
-    category: "Fashion",
-    categorySlug: "fashion",
-    price: 450000,
-    image: "/product-batik.png",
-    rating: 5.0,
-    sold: 12,
-    badge: "Eksklusif",
-    slug: "batik-tulis-truntum-klasik",
-  },
-  {
-    id: 6,
-    name: "Gelas Keramik Motif Batik Indigo",
-    category: "Kerajinan",
-    categorySlug: "kerajinan",
-    price: 75000,
-    image: "/similar-1.png",
-    rating: 4.8,
-    sold: 120,
-    badge: "",
-    slug: "gelas-keramik-motif-batik",
-  },
-  {
-    id: 7,
-    name: "Piring Dekoratif Batik Parang Cokelat",
-    category: "Kerajinan",
-    categorySlug: "kerajinan",
-    price: 95000,
-    image: "/similar-2.png",
-    rating: 5.0,
-    sold: 45,
-    badge: "",
-    slug: "piring-dekoratif-batik",
-  },
-  {
-    id: 8,
-    name: "Set Wadah Sambel Keramik Handmade",
-    category: "Kerajinan",
-    categorySlug: "kerajinan",
-    price: 120000,
-    image: "/similar-3.png",
-    rating: 4.7,
-    sold: 80,
-    badge: "Baru",
-    slug: "set-wadah-sambel-keramik",
-  },
-  {
-    id: 9,
-    name: "Vas Bunga Keramik Kontemporer Hitam",
-    category: "Kerajinan",
-    categorySlug: "kerajinan",
-    price: 210000,
-    image: "/similar-4.png",
-    rating: 4.9,
-    sold: 30,
-    badge: "",
-    slug: "vas-bunga-keramik",
-  },
-  {
-    id: 10,
-    name: "Sambal Bawang Pedas Asli Surabaya Botol",
-    category: "Kuliner",
-    categorySlug: "kuliner",
-    price: 35000,
-    image: "/similar-3.png",
-    rating: 4.7,
-    sold: 540,
-    badge: "Terlaris",
-    slug: "sambal-bawang-pedas",
-  },
-  {
-    id: 11,
-    name: "Tas Selendang Tenun Tradisional Lombok",
-    category: "Fashion",
-    categorySlug: "fashion",
-    price: 180000,
-    image: "/similar-2.png",
-    rating: 4.8,
-    sold: 32,
-    badge: "",
-    slug: "tas-selendang-tenun",
-  },
-  {
-    id: 12,
-    name: "Jasa Desain Kemasan Produk UMKM Kreatif",
-    category: "Jasa",
-    categorySlug: "jasa",
-    price: 350000,
-    image: "/hero-banner-2.png",
-    rating: 4.9,
-    sold: 40,
-    badge: "Populer",
-    slug: "jasa-desain-kemasan",
-  },
-  {
-    id: 13,
-    name: "Jasa Foto Produk Editorial Profesional",
-    category: "Jasa",
-    categorySlug: "jasa",
-    price: 500000,
-    image: "/hero-banner-3.png",
-    rating: 5.0,
-    sold: 15,
-    badge: "",
-    slug: "jasa-foto-produk",
-  }
-];
 
 // Available categories mapping
 const CATEGORIES_LIST = [
@@ -211,15 +54,43 @@ export default function CategoryPage({ params }: { params: Promise<{ slug?: stri
   const resolvedParams = use(params);
   const activeSlug = resolvedParams.slug?.[0] || "";
 
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState("terpopuler");
+
+  useEffect(() => {
+    async function loadProducts() {
+      try {
+        const data = await productService.getProducts();
+        const mapped = data.map((p: any) => ({
+          id: p.id_produk,
+          slug: p.slug || p.id_produk,
+          name: p.nama_produk,
+          price: p.harga,
+          image: p.img || "/product-keramik.png",
+          category: p.category || "UMKM Lokal",
+          categorySlug: p.categorySlug || "kerajinan",
+          rating: 4.8,
+          sold: Math.floor(Math.random() * 25) + 5,
+          badge: p.stok === 0 ? "Habis" : "Unggulan",
+        }));
+        setProducts(mapped);
+      } catch (err) {
+        console.error("Failed to load category products:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadProducts();
+  }, []);
 
   // Find active category
   const currentCategory = CATEGORIES_LIST.find(c => c.slug === activeSlug) || CATEGORIES_LIST[0];
 
   // Filter products by selected category slug
   const filteredProducts = activeSlug
-    ? ALL_PRODUCTS.filter(p => p.categorySlug === activeSlug)
-    : ALL_PRODUCTS;
+    ? products.filter(p => p.categorySlug === activeSlug)
+    : products;
 
   // Sort filtered products
   const sortedProducts = [...filteredProducts].sort((a, b) => {
@@ -326,8 +197,8 @@ export default function CategoryPage({ params }: { params: Promise<{ slug?: stri
                 {CATEGORIES_LIST.map((cat) => {
                   const isActive = (cat.slug === activeSlug);
                   const productCount = cat.slug 
-                    ? ALL_PRODUCTS.filter(p => p.categorySlug === cat.slug).length
-                    : ALL_PRODUCTS.length;
+                    ? products.filter(p => p.categorySlug === cat.slug).length
+                    : products.length;
 
                   return (
                     <Link
@@ -411,7 +282,11 @@ export default function CategoryPage({ params }: { params: Promise<{ slug?: stri
               </div>
 
               {/* Products Grid */}
-              {sortedProducts.length > 0 ? (
+              {loading ? (
+                <div style={{ textAlign: "center", padding: "60px 24px" }}>
+                  <p style={{ color: C.textSec, fontWeight: 600 }}>Memuat produk...</p>
+                </div>
+              ) : sortedProducts.length > 0 ? (
                 <div style={{
                   display: "grid",
                   gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))",
@@ -476,8 +351,20 @@ export default function CategoryPage({ params }: { params: Promise<{ slug?: stri
                             }}
                             className="category-cart-floating"
                             aria-label={`Tambah ${product.name} ke keranjang`}
-                            onClick={(e) => {
+                            onClick={async (e) => {
                               e.preventDefault();
+                              const user = authService.getCurrentUser();
+                              if (!user) {
+                                alert("Silakan masuk terlebih dahulu untuk berbelanja.");
+                                window.location.href = "/masuk";
+                                return;
+                              }
+                              const success = await cartService.addToCart(user.id_user, product.id, 1);
+                              if (success) {
+                                alert("Produk berhasil ditambahkan ke keranjang!");
+                              } else {
+                                alert("Gagal menambahkan ke keranjang.");
+                              }
                             }}
                           >
                             <ShoppingCart size={14} />

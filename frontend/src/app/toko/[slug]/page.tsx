@@ -1,10 +1,16 @@
-﻿"use client";
+"use client";
 
-import React, { useState, use } from "react";
+import React, { useState, use, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import { authService } from "@/backend/authService";
+import { sellerService } from "@/backend/sellerService";
+import { productService } from "@/backend/productService";
+import { cartService } from "@/backend/cartService";
+import { chatService } from "@/backend/chatService";
 import { 
   Store, 
   MapPin, 
@@ -50,15 +56,86 @@ const SHOP_REVIEWS = [
 export default function StorefrontPage({ params }: { params: Promise<{ slug: string }> }) {
   const resolvedParams = use(params);
   const slug = resolvedParams.slug;
+  const router = useRouter();
+
+  const [seller, setSeller] = useState<any>(null);
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
   const [activeTab, setActiveTab] = useState<"home" | "products" | "reviews">("home");
   const [isFollowing, setIsFollowing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const shopName = slug === "griya-keramik" ? "Griya Keramik Kasongan" : "Toko Kreatif UMKM";
-  const shopLocation = slug === "griya-keramik" ? "Bantul, Yogyakarta" : "Sleman, Yogyakarta";
+  useEffect(() => {
+    setCurrentUser(authService.getCurrentUser());
+    if (slug) {
+      loadStorefrontData();
+    }
+  }, [slug]);
+
+  async function loadStorefrontData() {
+    setLoading(true);
+    try {
+      const s = await sellerService.getSellerByIdOrSlug(slug);
+      if (s) {
+        setSeller(s);
+        const p = await productService.getProductsBySeller(s.id_seller);
+        setProducts(p);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleContactSeller() {
+    if (!currentUser) {
+      alert("Silakan masuk terlebih dahulu untuk mengirim pesan.");
+      router.push("/masuk");
+      return;
+    }
+    if (!seller) return;
+    const roomId = await chatService.getOrCreateChatRoom(currentUser.id_user, seller.id_seller);
+    if (roomId) {
+      router.push(`/chat?roomId=${roomId}`);
+    } else {
+      alert("Gagal memulai chat dengan penjual.");
+    }
+  }
+
+  async function handleAddToCart(productItem: any) {
+    if (!currentUser) {
+      alert("Silakan masuk terlebih dahulu untuk berbelanja.");
+      router.push("/masuk");
+      return;
+    }
+    const success = await cartService.addToCart(currentUser.id_user, productItem.id_produk, 1);
+    if (success) {
+      alert(`Menambahkan ${productItem.nama_produk} ke keranjang!`);
+    } else {
+      alert("Gagal menambahkan ke keranjang.");
+    }
+  }
+
+  const shopName = seller?.nm_store || (slug === "griya-keramik" ? "Griya Keramik Kasongan" : "Toko Kreatif UMKM");
+  const shopLocation = seller?.addr || (slug === "griya-keramik" ? "Bantul, Yogyakarta" : "Sleman, Yogyakarta");
+
+  // Map state products or backup static list if empty
+  const activeProducts = products.length > 0 ? products.map(p => ({
+    id: p.id_produk,
+    id_produk: p.id_produk,
+    name: p.nama_produk,
+    category: p.category || "UMKM LOKAL",
+    price: p.harga,
+    rating: 4.8, // default rating mockup
+    sold: 10,
+    image: p.img || "/product-keramik.png"
+  })) : SHOP_PRODUCTS;
 
   // Filter products by search query
-  const filteredProducts = SHOP_PRODUCTS.filter((p) =>
+  const filteredProducts = activeProducts.filter((p) =>
     p.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -126,13 +203,13 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
                 >
                   {isFollowing ? <><Check size={12} />Mengikuti</> : <><Plus size={12} />Ikuti Toko</>}
                 </button>
-                <Link
-                  href="/chat"
+                <button
+                  onClick={handleContactSeller}
                   className="h-8 px-4 rounded-lg border border-[#1D4ED8] text-[#1D4ED8] bg-white text-xs font-bold hover:bg-[#EFF6FF] transition flex items-center gap-1.5 whitespace-nowrap"
                 >
                   <MessageSquare size={12} />
                   Chat Penjual
-                </Link>
+                </button>
               </div>
             </div>
 
@@ -243,7 +320,7 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
               <div className="space-y-4">
                 <h3 className="font-headline text-lg font-bold text-on-surface">Sesuai incaran Anda di toko ini</h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                  {SHOP_PRODUCTS.slice(0, 4).map((product) => (
+                  {activeProducts.slice(0, 4).map((product) => (
                     <article key={product.id} className="bg-white border border-[#EAE5E0] rounded-xl overflow-hidden flex flex-col shadow-xs group hover:shadow-md transition duration-200">
                       <Link href={`/produk/${product.id}`} className="block relative aspect-square bg-[#F8F6F4]">
                         <Image src={product.image} alt={product.name} fill className="object-cover" />
@@ -264,7 +341,7 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
                             <span>{product.sold} terjual</span>
                           </div>
                           <button
-                            onClick={() => alert(`Menambahkan ${product.name} ke keranjang!`)}
+                            onClick={() => handleAddToCart(product)}
                             className="w-7 h-7 bg-primary text-white rounded-full flex items-center justify-center hover:brightness-95 active:scale-95 transition"
                             title="Tambah ke Keranjang"
                           >
@@ -281,7 +358,7 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
               <div className="space-y-4">
                 <h3 className="font-headline text-lg font-bold text-on-surface">Produk Terlaris</h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                  {SHOP_PRODUCTS.slice(2, 6).map((product) => (
+                  {activeProducts.slice(2, 6).map((product) => (
                     <article key={product.id} className="bg-white border border-[#EAE5E0] rounded-xl overflow-hidden flex flex-col shadow-xs group hover:shadow-md transition duration-200">
                       <Link href={`/produk/${product.id}`} className="block relative aspect-square bg-[#F8F6F4]">
                         <Image src={product.image} alt={product.name} fill className="object-cover" />
@@ -302,7 +379,7 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
                             <span>{product.sold} terjual</span>
                           </div>
                           <button
-                            onClick={() => alert(`Menambahkan ${product.name} ke keranjang!`)}
+                            onClick={() => handleAddToCart(product)}
                             className="w-7 h-7 bg-primary text-white rounded-full flex items-center justify-center hover:brightness-95 active:scale-95 transition"
                             title="Tambah ke Keranjang"
                           >
@@ -362,7 +439,7 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
                             <span>{product.sold} terjual</span>
                           </div>
                           <button
-                            onClick={() => alert(`Menambahkan ${product.name} ke keranjang!`)}
+                            onClick={() => handleAddToCart(product)}
                             className="w-7 h-7 bg-primary text-white rounded-full flex items-center justify-center hover:brightness-95 active:scale-95 transition"
                             title="Tambah ke Keranjang"
                           >

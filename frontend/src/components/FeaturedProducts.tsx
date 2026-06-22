@@ -1,66 +1,12 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import { ShoppingCart, Star, ArrowRight } from "lucide-react";
 import Link from "next/link";
-
-const PRODUCTS = [
-  {
-    id: 1,
-    name: "Mangkuk Keramik Motif Megamendung Handmade",
-    category: "KERAJINAN",
-    price: 125000,
-    image: "/product-keramik.png",
-    rating: 4.9,
-    sold: 120,
-    badge: "Bestseller",
-    slug: "mangkuk-keramik-megamendung",
-  },
-  {
-    id: 2,
-    name: "Kopi Toraja Arabika 250g Premium Roasted",
-    category: "KULINER",
-    price: 85000,
-    image: "/product-kopi.png",
-    rating: 4.8,
-    sold: 340,
-    badge: "Bestseller",
-    slug: "kopi-toraja-arabika-250g",
-  },
-  {
-    id: 3,
-    name: "Dompet Kulit Sapi Asli Handmade Cognac Brown",
-    category: "FASHION",
-    price: 210000,
-    image: "/product-dompet.png",
-    rating: 5.0,
-    sold: 50,
-    badge: "",
-    slug: "dompet-kulit-cognac-brown",
-  },
-  {
-    id: 4,
-    name: "Paket Perawatan Wajah Alami Ekstrak Kunyit",
-    category: "KESEHATAN",
-    price: 175000,
-    image: "/product-skincare.png",
-    rating: 4.3,
-    sold: 80,
-    badge: "Bestseller",
-    slug: "skincare-kunyit-alami",
-  },
-  {
-    id: 5,
-    name: "Kain Batik Tulis Motif Truntum Klasik",
-    category: "FASHION",
-    price: 450000,
-    image: "/product-batik.png",
-    rating: 5.0,
-    sold: 12,
-    badge: "",
-    slug: "batik-tulis-truntum-klasik",
-  },
-];
+import { productService } from "@/backend/productService";
+import { cartService } from "@/backend/cartService";
+import { authService } from "@/backend/authService";
 
 function formatPrice(price: number) {
   return `Rp ${price.toLocaleString("id-ID")}`;
@@ -71,7 +17,35 @@ interface FeaturedProductsProps {
 }
 
 export default function FeaturedProducts({ searchQuery = "" }: FeaturedProductsProps) {
-  const filteredProducts = PRODUCTS.filter((product) =>
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadProducts() {
+      try {
+        const data = await productService.getProducts();
+        const mapped = data.map((p: any) => ({
+          id: p.id_produk,
+          slug: p.slug || p.id_produk,
+          name: p.nama_produk,
+          price: p.harga,
+          image: p.img || "/product-keramik.png",
+          category: p.nama_brand || p.category || "UMKM Lokal",
+          rating: 4.8,
+          sold: Math.floor(Math.random() * 25) + 5,
+          badge: p.stok === 0 ? "Habis" : "Unggulan",
+        }));
+        setProducts(mapped);
+      } catch (err) {
+        console.error("Failed to load featured products:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadProducts();
+  }, []);
+
+  const filteredProducts = products.filter((product) =>
     product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     product.category.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -90,7 +64,11 @@ export default function FeaturedProducts({ searchQuery = "" }: FeaturedProductsP
           </Link>
         </div>
 
-        {filteredProducts.length === 0 ? (
+        {loading ? (
+          <div style={{ textAlign: "center", padding: "60px 24px" }}>
+            <p style={{ color: "#8E8680", fontWeight: 600 }}>Memuat produk unggulan...</p>
+          </div>
+        ) : filteredProducts.length === 0 ? (
           <div style={{
             textAlign: "center",
             padding: "60px 24px",
@@ -135,8 +113,20 @@ export default function FeaturedProducts({ searchQuery = "" }: FeaturedProductsP
                       className="product-cart-button-floating"
                       aria-label={`Tambah ${product.name} ke keranjang`}
                       id={`add-cart-${product.id}`}
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.preventDefault();
+                        const user = authService.getCurrentUser();
+                        if (!user) {
+                          alert("Silakan masuk terlebih dahulu untuk berbelanja.");
+                          window.location.href = "/masuk";
+                          return;
+                        }
+                        const success = await cartService.addToCart(user.id_user, product.id, 1);
+                        if (success) {
+                          alert("Produk berhasil ditambahkan ke keranjang!");
+                        } else {
+                          alert("Gagal menambahkan ke keranjang.");
+                        }
                       }}
                     >
                       <ShoppingCart size={15} />

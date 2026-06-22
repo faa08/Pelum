@@ -21,11 +21,33 @@ export default function AuthCallbackPage() {
           return;
         }
 
-        // Exchange the OAuth code for a session
+        // Check for error parameters in URL query
+        const searchParams = new URLSearchParams(window.location.search);
+        const urlError = searchParams.get("error");
+        const urlErrorDesc = searchParams.get("error_description");
+        if (urlError) {
+          console.error("OAuth error returned in URL query:", urlError, urlErrorDesc);
+          router.push(`/masuk?error=${urlError}`);
+          return;
+        }
+
+        // Exchange OAuth PKCE code if present in the query string
+        const code = searchParams.get("code");
+        if (code) {
+          console.log("Exchanging auth code for session...");
+          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+          if (exchangeError) {
+            console.error("Code exchange failed:", exchangeError);
+            router.push("/masuk?error=oauth_failed");
+            return;
+          }
+        }
+
+        // Fetch session
         const { data, error } = await supabase.auth.getSession();
 
         if (error || !data.session) {
-          console.error("OAuth callback error:", error);
+          console.error("OAuth callback error: Session not found.", error);
           router.push("/masuk?error=oauth_failed");
           return;
         }

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React from "react";
 import Link from "next/link";
@@ -9,8 +9,11 @@ export default function AdminSidebar() {
 
   const menuItems = [
     { name: "Dashboard", href: "/admin/dashboard", icon: "grid_view" },
-    { name: "Verifikasi Toko", href: "/admin/verification", icon: "verified_user" },
     { name: "Manajemen Toko", href: "/admin/stores", icon: "storefront" },
+    { name: "Manajemen Produk", href: "/admin/products", icon: "inventory_2" },
+    { name: "Pesanan", href: "/admin/orders", icon: "shopping_bag" },
+    { name: "Pengiriman", href: "/admin/pengiriman", icon: "local_shipping" },
+    { name: "Saldo", href: "/admin/saldo", icon: "account_balance_wallet" },
     { name: "Transaksi", href: "/admin/transactions", icon: "receipt_long" },
     { name: "Laporan", href: "/admin/reports", icon: "analytics" },
     { name: "Pengaturan", href: "/admin/settings", icon: "settings" },

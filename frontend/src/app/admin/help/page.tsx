@@ -1,6 +1,8 @@
-﻿"use client";
+"use client";
 
 import React, { useState } from "react";
+import { authService } from "@/backend/authService";
+import { chatService } from "@/backend/chatService";
 
 export default function AdminHelpPage() {
   const [ticketSubject, setTicketSubject] = useState("");
@@ -22,11 +24,18 @@ export default function AdminHelpPage() {
     }
   ];
 
-  const handleSendTicket = (e: React.FormEvent) => {
+  const handleSendTicket = async (e: React.FormEvent) => {
     e.preventDefault();
-    alert(`Tiket Bantuan Admin Terkirim!\nSubjek: ${ticketSubject}\nPesan: ${ticketMessage}`);
-    setTicketSubject("");
-    setTicketMessage("");
+    const user = authService.getCurrentUser();
+    const userId = user ? user.id_user : null;
+    const success = await chatService.createSupportTicket(userId, ticketSubject, ticketMessage);
+    if (success) {
+      alert("Tiket Bantuan Admin Berhasil Terkirim!");
+      setTicketSubject("");
+      setTicketMessage("");
+    } else {
+      alert("Gagal mengirim tiket bantuan. Silakan coba lagi.");
+    }
   };
 
   const filteredFaqs = faqs.filter(

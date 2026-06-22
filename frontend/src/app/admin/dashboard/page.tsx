@@ -1,12 +1,12 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect } from "react";
-
+import { supabase } from "@/backend/supabase";
 interface DashboardStats {
   totalSellers: number;
   activeProducts: number;
   totalVolume: number;
-  pendingVerifications: number;
+  pendingDeliveries: number;
 }
 
 export default function AdminDashboardPage() {
@@ -15,36 +15,12 @@ export default function AdminDashboardPage() {
     totalSellers: 0,
     activeProducts: 0,
     totalVolume: 0,
-    pendingVerifications: 0,
+    pendingDeliveries: 0,
   });
   const [chartData, setChartData] = useState<number[]>([]);
 
-  // Simulation of loading data from Backend/Database
   useEffect(() => {
-    const timer = setTimeout(() => {
-      // Mocking empty database initially
-      // Once connected to DB, these values will come from fetch / Supabase queries
-      setStats({
-        totalSellers: 0,
-        activeProducts: 0,
-        totalVolume: 0,
-        pendingVerifications: 0,
-      });
-      setChartData([]); // Empty chart data initially
-      setIsLoading(false);
-    }, 1500);
-
-    return () => clearTimeout(timer);
-  }, []);
-
-  /* 
-    ==========================================================================
-    BACKEND INTEGRATION GUIDE (SUPABASE)
-    ==========================================================================
-    Untuk menyambungkan dengan Supabase PostgreSQL, gunakan kode di bawah ini:
-    
-    import { createClient } from "@supabase/supabase-js";
-    const supabase = createClient("SUPABASE_URL", "SUPABASE_ANON_KEY");
+    let isMounted = true;
 
     const fetchDashboardStats = async () => {
       try {
@@ -68,34 +44,39 @@ export default function AdminDashboardPage() {
           .eq("stat_order", "selesai");
         const totalVolume = ordersData?.reduce((sum, item) => sum + Number(item.total_hrg), 0) || 0;
 
-        // 4. Antrian Verifikasi Toko (seller belum diverifikasi)
+        // 4. Perlu Dikirim (order dengan status pending)
         const { count: pendingCount, error: err4 } = await supabase
-          .from("seller")
+          .from("order")
           .select("*", { count: "exact", head: true })
-          .eq("is_verified", false);
+          .eq("stat_order", "pending");
 
         if (err1 || err2 || err3 || err4) {
-          throw new Error("Gagal mengambil data dari database.");
+          console.error("Gagal mengambil data stat:", { err1, err2, err3, err4 });
         }
 
-        setStats({
-          totalSellers: sellersCount || 0,
-          activeProducts: productsCount || 0,
-          totalVolume: totalVolume,
-          pendingVerifications: pendingCount || 0,
-        });
+        if (isMounted) {
+          setStats({
+            totalSellers: sellersCount || 0,
+            activeProducts: productsCount || 0,
+            totalVolume: totalVolume,
+            pendingDeliveries: pendingCount || 0,
+          });
 
-        // 5. Mengambil Data Grafik (contoh agregasi volume per bulan)
-        // logic tambahan untuk mengelompokkan total_hrg berdasarkan created_at bulan
-        // setChartData([janVal, febVal, ...]);
+          // 5. Mengambil Data Grafik (Contoh flat data, jika totalVolume ada)
+          setChartData(totalVolume > 0 ? [0, totalVolume] : []);
+        }
 
       } catch (err) {
         console.error(err);
       } finally {
-        setIsLoading(false);
+        if (isMounted) setIsLoading(false);
       }
     };
-  */
+
+    fetchDashboardStats();
+
+    return () => { isMounted = false; };
+  }, []);
 
   return (
     <div className="space-y-8">
@@ -181,7 +162,7 @@ export default function AdminDashboardPage() {
           )}
         </div>
 
-        {/* Card 4: Antrian Verifikasi */}
+        {/* Card 4: Perlu Dikirim */}
         <div className="bg-white p-6 rounded-xl flex items-center justify-between shadow-[0_8px_30px_rgb(0,0,0,0.02)] relative overflow-hidden">
           {isLoading ? (
             <div className="w-full space-y-3 animate-pulse">
@@ -191,12 +172,12 @@ export default function AdminDashboardPage() {
           ) : (
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-lg bg-[#EFF6FF] flex items-center justify-center text-[#1D4ED8] flex-shrink-0">
-                <span className="material-symbols-outlined text-2xl">assignment_turned_in</span>
+                <span className="material-symbols-outlined text-2xl">local_shipping</span>
               </div>
               <div>
-                <p className="text-[10px] uppercase font-bold text-[#3E3834] tracking-wider">Antrian Verifikasi</p>
+                <p className="text-[10px] uppercase font-bold text-[#3E3834] tracking-wider">Perlu Dikirim</p>
                 <h3 className="font-headline text-2xl font-extrabold text-[#1F1B18] mt-1 leading-none">
-                  {stats.pendingVerifications} Toko
+                  {stats.pendingDeliveries} Pesanan
                 </h3>
               </div>
             </div>
