@@ -99,7 +99,7 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
     if (!seller) return;
     const roomId = await chatService.getOrCreateChatRoom(currentUser.id_user, seller.id_seller);
     if (roomId) {
-      router.push(`/chat?roomId=${roomId}`);
+      window.open(`/chat?roomId=${roomId}`, "_blank", "noopener,noreferrer");
     } else {
       alert("Gagal memulai chat dengan penjual.");
     }

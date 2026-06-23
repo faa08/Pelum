@@ -19,6 +19,8 @@ import {
 import Navbar from "@/components/Navbar";
 import SearchBar from "@/components/SearchBar";
 import Footer from "@/components/Footer";
+import CategoryHero from "@/components/CategoryHero";
+import { getCategoryHeroConfig } from "@/data/categoryHero";
 import { productService } from "@/backend/productService";
 import { cartService } from "@/backend/cartService";
 import { authService } from "@/backend/authService";
@@ -86,6 +88,7 @@ export default function CategoryPage({ params }: { params: Promise<{ slug?: stri
 
   // Find active category
   const currentCategory = CATEGORIES_LIST.find(c => c.slug === activeSlug) || CATEGORIES_LIST[0];
+  const heroConfig = getCategoryHeroConfig(activeSlug);
 
   // Filter products by selected category slug
   const filteredProducts = activeSlug
@@ -124,58 +127,12 @@ export default function CategoryPage({ params }: { params: Promise<{ slug?: stri
           </nav>
 
           {/* Banner Hero Kategori */}
-          <div style={{
-            position: "relative",
-            background: `linear-gradient(135deg, ${C.primaryPale} 0%, #FFFFFF 100%)`,
-            border: `1.5px solid ${C.border}`,
-            borderRadius: 16,
-            padding: "40px 48px",
-            marginBottom: 32,
-            overflow: "hidden",
-            boxShadow: "var(--shadow-sm)"
-          }}>
-            <div style={{ position: "relative", zIndex: 2, maxWidth: 640 }}>
-              <span style={{
-                display: "inline-block",
-                background: C.primary,
-                color: "white",
-                fontSize: "0.7rem",
-                fontWeight: 800,
-                padding: "4px 12px",
-                borderRadius: 4,
-                marginBottom: 12,
-                textTransform: "uppercase",
-                letterSpacing: "0.05em"
-              }}>
-                Galeri UMKM Pilihan
-              </span>
-              <h1 style={{
-                fontSize: "2.25rem",
-                fontWeight: 800,
-                color: C.text,
-                lineHeight: 1.15,
-                margin: "0 0 10px 0",
-                fontFamily: "var(--font-jakarta)"
-              }}>
-                {activeSlug ? `Kategori ${currentCategory.name}` : "Semua Kategori Produk"}
-              </h1>
-              <p style={{ fontSize: "0.9375rem", color: C.textSec, margin: 0, lineHeight: 1.6 }}>
-                Temukan barang kerajinan otentik, hidangan lezat kuliner nusantara, busana lokal tradisional, dan layanan jasa berkualitas langsung dari pelaku UMKM terpercaya.
-              </p>
-            </div>
-            {/* Background design elements */}
-            <div style={{
-              position: "absolute",
-              right: "-40px",
-              bottom: "-40px",
-              width: 240,
-              height: 240,
-              borderRadius: "50%",
-              background: C.primaryPale,
-              opacity: 0.8,
-              zIndex: 1
-            }} />
-          </div>
+          <CategoryHero
+            title={activeSlug ? `Kategori ${currentCategory.name}` : "Semua Kategori Produk"}
+            description={heroConfig.description}
+            backgroundImage={heroConfig.backgroundImage}
+            backgroundPosition={heroConfig.backgroundPosition}
+          />
 
           <div style={{ display: "grid", gridTemplateColumns: "250px 1fr", gap: 32, alignItems: "start" }}>
             

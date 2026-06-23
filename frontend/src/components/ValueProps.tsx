@@ -1,41 +1,137 @@
-import { Users, Zap } from "lucide-react";
+import Link from "next/link";
+import {
+  Users,
+  ShieldCheck,
+  Zap,
+  Search,
+  ShoppingCart,
+  CreditCard,
+  PackageCheck,
+  ArrowRight,
+  Sparkles,
+} from "lucide-react";
+
+const VALUE_PROPS = [
+  {
+    icon: Users,
+    title: "Fokus Komunitas",
+    desc: "Kami menghubungkan langsung pembeli dengan ribuan pengusaha lokal di seluruh Indonesia untuk membangun ekonomi mandiri.",
+    accentClass: "value-card-accent--community",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Kualitas Terjamin",
+    desc: "Setiap produk di Pelataran UMKM telah melewati proses kurasi ketat untuk memastikan standar kualitas tinggi bagi pelanggan.",
+    accentClass: "value-card-accent--quality",
+  },
+  {
+    icon: Zap,
+    title: "Transaksi Mudah",
+    desc: "Sistem pembayaran yang aman dan berbagai pilihan logistik memudahkan setiap langkah belanja Anda dari mana saja.",
+    accentClass: "value-card-accent--transaction",
+  },
+];
+
+const SHOPPING_STEPS = [
+  {
+    step: 1,
+    icon: Search,
+    title: "Jelajahi Produk",
+    desc: "Cari dan temukan produk UMKM lokal favorit Anda dari berbagai kategori.",
+  },
+  {
+    step: 2,
+    icon: ShoppingCart,
+    title: "Tambah ke Keranjang",
+    desc: "Pilih varian, tentukan jumlah, lalu masukkan produk ke keranjang belanja.",
+  },
+  {
+    step: 3,
+    icon: CreditCard,
+    title: "Checkout & Bayar",
+    desc: "Isi alamat pengiriman dan selesaikan pembayaran dengan metode yang aman.",
+  },
+  {
+    step: 4,
+    icon: PackageCheck,
+    title: "Terima Pesanan",
+    desc: "Pesanan dikirim ke alamat Anda. Lacak status pengiriman kapan saja.",
+  },
+];
 
 export default function ValueProps() {
   return (
-    <section className="section-value-props">
+    <section className="section-value-props-enhanced">
       <div className="container">
-        <div className="value-props-grid-three">
-          
-          {/* Card 1 */}
-          <div className="value-card-custom">
-            <div className="value-icon-custom">
-              <Users size={22} />
+        {/* ── Section Header ── */}
+        <div className="value-section-header">
+          <span className="value-section-badge">
+            <Sparkles size={13} />
+            Keunggulan Kami
+          </span>
+          <h2 className="value-section-title">
+            Mengapa harus beli di{" "}
+            <span className="value-section-title-accent">Pelataran UMKM</span>?
+          </h2>
+          <p className="value-section-subtitle">
+            Platform marketplace yang dirancang khusus untuk mendukung produk lokal
+            berkualitas dan transaksi yang nyaman bagi Anda.
+          </p>
+        </div>
+
+        {/* ── Value Cards ── */}
+        <div className="value-props-grid-three value-props-grid-enhanced">
+          {VALUE_PROPS.map((item) => {
+            const Icon = item.icon;
+            return (
+              <div key={item.title} className={`value-card-enhanced ${item.accentClass}`}>
+                <div className="value-card-enhanced-icon">
+                  <Icon size={22} strokeWidth={2.25} />
+                </div>
+                <h3 className="value-title-custom">{item.title}</h3>
+                <p className="value-desc-custom">{item.desc}</p>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* ── Customer Flow ── */}
+        <div className="customer-flow-panel">
+          <div className="customer-flow-header">
+            <div>
+              <span className="value-section-badge value-section-badge-sm">
+                Alur Belanja
+              </span>
+              <h3 className="customer-flow-title">Cara Belanja di Pelataran UMKM</h3>
+              <p className="customer-flow-subtitle">
+                Hanya 4 langkah mudah — dari mencari produk hingga pesanan sampai di tangan Anda.
+              </p>
             </div>
-            <h3 className="value-title-custom">Fokus Komunitas</h3>
-            <p className="value-desc-custom">
-              Kami menghubungkan langsung pembeli dengan ribuan pengusaha lokal di seluruh Indonesia untuk membangun ekonomi mandiri.
-            </p>
+            <Link href="/kategori" className="customer-flow-cta">
+              Mulai Belanja
+              <ArrowRight size={16} />
+            </Link>
           </div>
 
-          {/* Card 2 - No Icon */}
-          <div className="value-card-custom no-icon-card">
-            <h3 className="value-title-custom">Kualitas Terjamin</h3>
-            <p className="value-desc-custom">
-              Setiap produk di Pelataran UMKM telah melewati proses kurasi ketat untuk memastikan standar kualitas tinggi bagi pelanggan.
-            </p>
+          <div className="customer-flow-steps">
+            {SHOPPING_STEPS.map((item, index) => {
+              const Icon = item.icon;
+              const isLast = index === SHOPPING_STEPS.length - 1;
+              return (
+                <div key={item.step} className="customer-flow-step">
+                  <div className="customer-flow-step-visual">
+                    <div className="customer-flow-step-number">{item.step}</div>
+                    {!isLast && <div className="customer-flow-connector" aria-hidden="true" />}
+                  </div>
+                  <div className="customer-flow-step-icon">
+                    <Icon size={20} strokeWidth={2.25} />
+                  </div>
+                  <h4 className="customer-flow-step-title">{item.title}</h4>
+                  <p className="customer-flow-step-desc">{item.desc}</p>
+                </div>
+              );
+            })}
           </div>
-
-          {/* Card 3 */}
-          <div className="value-card-custom">
-            <div className="value-icon-custom">
-              <Zap size={22} fill="currentColor" />
-            </div>
-            <h3 className="value-title-custom">Transaksi Mudah</h3>
-            <p className="value-desc-custom">
-              Sistem pembayaran yang aman dan berbagai pilihan logistik memudahkan setiap langkah belanja Anda dari mana saja.
-            </p>
-          </div>
-
         </div>
       </div>
     </section>

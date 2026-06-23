@@ -47,6 +47,8 @@ export default function HelpCenterLayout({
           <div className="flex items-center gap-5">
             <Link
               href="/chat"
+              target="_blank"
+              rel="noopener noreferrer"
               className="flex items-center gap-1.5 text-xs font-bold text-secondary hover:text-[#1D4ED8] transition"
             >
               <Mail size={15} />
@@ -102,6 +104,8 @@ export default function HelpCenterLayout({
         </div>
         <Link
           href="/chat"
+          target="_blank"
+          rel="noopener noreferrer"
           className="bg-primary text-white text-[11px] font-extrabold px-3 py-2 rounded-lg hover:brightness-95 active:scale-95 transition flex-shrink-0"
         >
           Mulai Chat

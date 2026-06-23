@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
 import { 
   Send, 
   Image as ImageIcon, 
@@ -302,21 +301,11 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-surface">
-      <Navbar />
+    <div className="h-dvh flex flex-col bg-surface overflow-hidden">
+      <Navbar hideCartAndChat />
 
-      <main className="flex-grow max-w-[1200px] w-full mx-auto px-6 py-6 flex flex-col h-[650px] md:h-[650px] flex-shrink-0">
-        {/* Breadcrumb / Title */}
-        <div className="mb-4 flex-shrink-0">
-          <h2 className="font-headline text-2xl font-bold text-on-surface flex items-center gap-2">
-            <MessageSquare className="text-primary" size={24} />
-            Kotak Masuk Chat
-          </h2>
-          <p className="text-xs text-secondary mt-0.5">Hubungi penjual atau pembeli secara langsung</p>
-        </div>
-
-        {/* Chat Interface Container */}
-        <div className="flex-grow bg-white border border-[#EAE5E0] rounded-xl flex overflow-hidden shadow-sm relative min-h-0">
+      <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        <div className="flex-1 bg-white border-t border-[#EAE5E0] flex overflow-hidden relative min-h-0">
           
           {/* LEFT SIDEBAR: Conversations List */}
           <div className={`w-full md:w-[360px] border-r border-[#EAE5E0] flex flex-col bg-white min-h-0 ${activeId && "hidden md:flex"}`}>
@@ -643,8 +632,6 @@ export default function ChatPage() {
 
         </div>
       </main>
-
-      <Footer />
     </div>
   );
 }

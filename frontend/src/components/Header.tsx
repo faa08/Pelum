@@ -168,7 +168,7 @@ export default function Header({
               </Link>
 
               {/* Chat Icon */}
-              <Link href="/chat" className="nav-cart-btn" id="chat-btn" title="Chat">
+              <Link href="/chat" target="_blank" rel="noopener noreferrer" className="nav-cart-btn" id="chat-btn" title="Chat">
                 <MessageSquare size={18} className="nav-icon-orange" />
                 <span>Chat</span>
               </Link>

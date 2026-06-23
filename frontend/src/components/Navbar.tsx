@@ -29,7 +29,7 @@ interface Notification {
 
 const INITIAL_NOTIFICATIONS: Notification[] = [];
 
-export default function Navbar({ searchQuery, setSearchQuery }: { searchQuery?: string; setSearchQuery?: (q: string) => void }) {
+export default function Navbar({ searchQuery, setSearchQuery, hideCartAndChat = false }: { searchQuery?: string; setSearchQuery?: (q: string) => void; hideCartAndChat?: boolean }) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -127,16 +127,19 @@ export default function Navbar({ searchQuery, setSearchQuery }: { searchQuery?: 
 
         {/* Right: Actions */}
         <div className="nav-actions-right">
-          <Link href="/keranjang" className="nav-cart-btn" id="cart-btn">
-            <ShoppingCart size={18} className="nav-icon-orange" />
-            <span>Keranjang</span>
-          </Link>
+          {!hideCartAndChat && (
+            <>
+              <Link href="/keranjang" className="nav-cart-btn" id="cart-btn">
+                <ShoppingCart size={18} className="nav-icon-orange" />
+                <span>Keranjang</span>
+              </Link>
 
-          {/* Chat Icon */}
-          <Link href="/chat" className="nav-cart-btn" id="chat-btn" title="Chat">
-            <MessageSquare size={18} className="nav-icon-orange" />
-            <span>Chat</span>
-          </Link>
+              <Link href="/chat" target="_blank" rel="noopener noreferrer" className="nav-cart-btn" id="chat-btn" title="Chat">
+                <MessageSquare size={18} className="nav-icon-orange" />
+                <span>Chat</span>
+              </Link>
+            </>
+          )}
 
           {/* Notification Button and Dropdown Card */}
           <div className="notif-container" ref={containerRef}>
