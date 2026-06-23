@@ -94,6 +94,7 @@ export default function ProductDetailPage() {
         );
         if (found) {
           setProduct(found);
+          setActiveImg(0);
           const initialSelections: { [key: number]: number } = {};
           found.variants?.forEach((_, idx) => {
             initialSelections[idx] = 0;
@@ -233,14 +234,42 @@ export default function ProductDetailPage() {
                 border: "1px solid #EAE5E0",
               }}>
                 <img
-                  src={product ? product.img : THUMBNAILS[activeImg]}
+                  src={
+                    product
+                      ? (product.images && product.images[activeImg] ? product.images[activeImg] : product.img)
+                      : THUMBNAILS[activeImg]
+                  }
                   alt={product ? product.nama_produk : "Mangkuk Keramik Motif Batik"}
                   style={{ width: "100%", height: "100%", objectFit: "cover" }}
                 />
               </div>
 
               {/* Thumbnails */}
-              {!product && (
+              {product && product.images && product.images.length > 0 ? (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {product.images.map((src, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setActiveImg(i)}
+                      style={{
+                        position: "relative",
+                        width: 72,
+                        height: 72,
+                        borderRadius: 8,
+                        overflow: "hidden",
+                        border: activeImg === i ? "2px solid #1D4ED8" : "2px solid transparent",
+                        cursor: "pointer",
+                        background: "#F8F6F4",
+                        padding: 0,
+                        flexShrink: 0,
+                        transition: "border-color 0.15s",
+                      }}
+                    >
+                      <img src={src} alt={`Foto ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    </button>
+                  ))}
+                </div>
+              ) : !product ? (
                 <div style={{ display: "flex", gap: 8 }}>
                   {THUMBNAILS.map((src, i) => (
                     <button
@@ -260,11 +289,11 @@ export default function ProductDetailPage() {
                         transition: "border-color 0.15s",
                       }}
                     >
-                      <Image src={src} alt={`Foto ${i + 1}`} fill style={{ objectFit: "cover" }} />
+                      <img src={src} alt={`Foto ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                     </button>
                   ))}
                 </div>
-              )}
+              ) : null}
             </div>
 
             {/* Right: Product Info */}

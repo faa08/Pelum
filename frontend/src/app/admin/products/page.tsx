@@ -30,7 +30,8 @@ export default function AdminProductsPage() {
   const [newProductPrice, setNewProductPrice] = useState("");
   const [newProductStock, setNewProductStock] = useState("");
   const [newProductDescription, setNewProductDescription] = useState("");
-  const [newProductImage, setNewProductImage] = useState("");
+  const [newProductImages, setNewProductImages] = useState<string[]>([]);
+  const [manualUrl, setManualUrl] = useState("");
   const [newProductWeight, setNewProductWeight] = useState("");
   const [useManualUrl, setUseManualUrl] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -83,7 +84,8 @@ export default function AdminProductsPage() {
     setNewProductPrice("");
     setNewProductStock("");
     setNewProductDescription("");
-    setNewProductImage("");
+    setNewProductImages([]);
+    setManualUrl("");
     setNewProductCode("");
     setNewProductWeight("");
     setUploadProgress(null);
@@ -101,7 +103,7 @@ export default function AdminProductsPage() {
     setNewProductPrice(p.harga.toString());
     setNewProductStock(p.stok.toString());
     setNewProductDescription(p.desc);
-    setNewProductImage(p.img);
+    setNewProductImages(p.images || (p.img ? [p.img] : []));
     setNewProductWeight(p.berat ? p.berat.toString() : "0");
     setShowAddModal(true);
   };
@@ -119,57 +121,69 @@ export default function AdminProductsPage() {
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      if (file.size > 2 * 1024 * 1024) {
-        alert("Ukuran gambar terlalu besar! Maksimal adalah 2MB.");
+    if (e.target.files && e.target.files.length > 0) {
+      const files = Array.from(e.target.files);
+      
+      if (newProductImages.length + files.length > 10) {
+        alert("Maksimal 10 gambar per produk.");
         return;
       }
 
       setUploadProgress(0);
-      setNewProductImage("");
-
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Math.random().toString(36).substring(2, 15)}-${Date.now()}.${fileExt}`;
-      const filePath = `product-images/${fileName}`;
-
-      let uploadedUrl = "";
-      try {
-        setUploadProgress(20);
-        const { data, error } = await supabase.storage
-          .from("products")
-          .upload(filePath, file, {
-            cacheControl: '3600',
-            upsert: false
-          });
-
-        if (error) throw error;
-        setUploadProgress(80);
-
-        const { data: publicUrlData } = supabase.storage
-          .from("products")
-          .getPublicUrl(filePath);
-
-        if (publicUrlData && publicUrlData.publicUrl) {
-          uploadedUrl = publicUrlData.publicUrl;
-        } else {
-          throw new Error("Gagal mendapatkan public URL.");
+      const uploadedUrls: string[] = [];
+      
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (file.size > 2 * 1024 * 1024) {
+          alert(`Ukuran gambar ${file.name} terlalu besar! Maksimal adalah 2MB.`);
+          continue;
         }
 
-        setUploadProgress(100);
-        setNewProductImage(uploadedUrl);
-      } catch (err) {
-        console.warn("Gagal mengunggah ke Supabase Storage, menggunakan mode fallback base64...", err);
-        setUploadProgress(50);
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          if (event.target && event.target.result) {
-            setNewProductImage(event.target.result as string);
-            setUploadProgress(100);
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Math.random().toString(36).substring(2, 15)}-${Date.now()}.${fileExt}`;
+        const filePath = `product-images/${fileName}`;
+
+        let uploadedUrl = "";
+        try {
+          const currentProgress = Math.round((i / files.length) * 100);
+          setUploadProgress(currentProgress + 10);
+          
+          const { data, error } = await supabase.storage
+            .from("products")
+            .upload(filePath, file, {
+              cacheControl: '3600',
+              upsert: false
+            });
+
+          if (error) throw error;
+          
+          const { data: publicUrlData } = supabase.storage
+            .from("products")
+            .getPublicUrl(filePath);
+
+          if (publicUrlData && publicUrlData.publicUrl) {
+            uploadedUrl = publicUrlData.publicUrl;
+            uploadedUrls.push(uploadedUrl);
+          } else {
+            throw new Error("Gagal mendapatkan public URL.");
           }
-        };
-        reader.readAsDataURL(file);
+        } catch (err) {
+          console.warn("Gagal mengunggah ke Supabase Storage, menggunakan mode fallback base64...", err);
+          const base64Url = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              resolve(event.target?.result as string || "");
+            };
+            reader.readAsDataURL(file);
+          });
+          if (base64Url) {
+            uploadedUrls.push(base64Url);
+          }
+        }
       }
+
+      setNewProductImages(prev => [...prev, ...uploadedUrls]);
+      setUploadProgress(null);
     }
   };
 
@@ -180,6 +194,8 @@ export default function AdminProductsPage() {
       return;
     }
 
+    const imagesToSubmit = newProductImages.length > 0 ? newProductImages : undefined;
+
     if (editingProduct) {
       const success = await productService.updateProduct(
         editingProduct.id_produk,
@@ -188,7 +204,7 @@ export default function AdminProductsPage() {
         parseFloat(newProductPrice) || 0,
         parseInt(newProductStock) || 0,
         newProductDescription || "Deskripsi produk baru",
-        newProductImage || undefined,
+        imagesToSubmit,
         (parseInt(newProductStock) || 0) > 0 ? "Aktif" : "Stok Habis",
         newProductBrandName,
         newProductCode || undefined,
@@ -210,7 +226,7 @@ export default function AdminProductsPage() {
         parseFloat(newProductPrice) || 0,
         parseInt(newProductStock) || 0,
         newProductDescription || "Deskripsi produk baru",
-        newProductImage || undefined,
+        imagesToSubmit,
         (parseInt(newProductStock) || 0) > 0 ? "Aktif" : "Stok Habis",
         newProductBrandName,
         newProductCode || undefined,
@@ -546,85 +562,128 @@ export default function AdminProductsPage() {
                 </div>
               </div>
 
-              <div className="space-y-1.5 text-left">
+              <div className="space-y-2 text-left">
                 <label className="block text-[11px] uppercase tracking-wider text-[#8E8680]">Gambar Produk</label>
+                
+                {/* Upload progress indicator */}
+                {uploadProgress !== null && (
+                  <div className="w-full text-center space-y-1 p-2 bg-[#EFF6FF] border border-[#BFDBFE] rounded-lg">
+                    <p className="text-[10px] font-bold text-[#1D4ED8]">Mengunggah Gambar: {uploadProgress}%</p>
+                    <div className="w-full h-1.5 bg-blue-100 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-[#1D4ED8] transition-all duration-100" 
+                        style={{ width: `${uploadProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Thumbnails grid */}
+                <div className="grid grid-cols-5 gap-3 mb-2">
+                  {newProductImages.map((imgUrl, index) => (
+                    <div key={index} className="relative group aspect-square rounded-lg border border-[#EAE5E0] overflow-hidden bg-[#F5F3F0] shadow-xs">
+                      <img src={imgUrl} alt={`Gambar ${index + 1}`} className="w-full h-full object-cover" />
+                      
+                      {/* Cover / Utama Badge */}
+                      {index === 0 && (
+                        <span className="absolute top-1 left-1 bg-[#1D4ED8] text-white text-[8px] font-extrabold px-1.5 py-0.5 rounded shadow">
+                          Utama
+                        </span>
+                      )}
+
+                      {/* Actions overlay on hover */}
+                      <div className="absolute inset-0 bg-black/55 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-1.5 transition-opacity duration-150">
+                        {index > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNewProductImages(prev => {
+                                const updated = [...prev];
+                                const item = updated.splice(index, 1)[0];
+                                return [item, ...updated];
+                              });
+                            }}
+                            title="Jadikan Foto Utama"
+                            className="p-1 bg-white hover:bg-blue-50 text-[#1D4ED8] rounded-full shadow-xs transition"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">star</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewProductImages(prev => prev.filter((_, idx) => idx !== index));
+                          }}
+                          title="Hapus Gambar"
+                          className="p-1 bg-white hover:bg-red-50 text-red-600 rounded-full shadow-xs transition"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">delete</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Upload button slot inside grid */}
+                  {newProductImages.length < 10 && !useManualUrl && (
+                    <div className="relative aspect-square border border-dashed border-[#D5CFC9] rounded-lg bg-[#FCFCFA] hover:bg-[#F5F3F0]/50 hover:border-[#1D4ED8] transition flex flex-col items-center justify-center cursor-pointer text-center p-2">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                        onChange={handleImageUpload}
+                      />
+                      <span className="material-symbols-outlined text-[#8E8680] text-[22px] mb-0.5">
+                        add_photo_alternate
+                      </span>
+                      <p className="text-[9px] font-bold text-[#1F1B18]">Tambah Foto</p>
+                      <p className="text-[7px] text-[#8E8680] mt-0.5">({newProductImages.length}/10)</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Manual URL Input */}
                 {useManualUrl ? (
-                  <div className="space-y-2">
-                    <input 
-                      type="text" 
-                      value={newProductImage}
-                      onChange={(e) => setNewProductImage(e.target.value)}
-                      placeholder="https://example.com/image.jpg" 
-                      className="w-full px-3.5 py-2.5 border border-[#D5CFC9] rounded bg-[#F5F3F0] focus:outline-none focus:ring-1 focus:ring-[#1D4ED8] focus:border-[#1D4ED8] text-xs font-body text-[#1F1B18]"
-                    />
+                  <div className="space-y-2 border border-[#EAE5E0] rounded-lg p-3 bg-[#FCFCFA]">
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        value={manualUrl}
+                        onChange={(e) => setManualUrl(e.target.value)}
+                        placeholder="Masukkan URL gambar (https://...)" 
+                        className="flex-1 px-3 py-2 border border-[#D5CFC9] rounded bg-[#F5F3F0] focus:outline-none focus:ring-1 focus:ring-[#1D4ED8] focus:border-[#1D4ED8] text-xs font-body text-[#1F1B18]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (manualUrl.trim()) {
+                            setNewProductImages(prev => [...prev, manualUrl.trim()]);
+                            setManualUrl("");
+                          }
+                        }}
+                        className="px-3 py-2 bg-[#1D4ED8] text-white text-xs font-bold rounded hover:bg-blue-700 transition"
+                      >
+                        Tambah
+                      </button>
+                    </div>
                     <button
                       type="button"
                       onClick={() => setUseManualUrl(false)}
                       className="text-[10px] text-[#1D4ED8] font-bold hover:underline"
                     >
-                      ← Unggah File Gambar
+                      ← Gunakan Pengunggah File
                     </button>
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    <div className="border border-dashed border-[#D5CFC9] rounded-lg p-6 flex flex-col items-center justify-center bg-[#FCFCFA] relative cursor-pointer hover:bg-[#F5F3F0]/50 transition">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="absolute inset-0 opacity-0 cursor-pointer z-10"
-                        onChange={handleImageUpload}
-                      />
-                      
-                      {uploadProgress === null && !newProductImage && (
-                        <div className="text-center">
-                          <span className="material-symbols-outlined text-[#8E8680] text-[32px] mb-1">
-                            add_photo_alternate
-                          </span>
-                          <p className="text-xs font-bold text-[#1F1B18]">Pilih atau Tarik Foto Produk</p>
-                          <p className="text-[10px] text-[#8E8680] mt-1">Maks. 2MB (Format: JPG, PNG, WEBP)</p>
-                        </div>
-                      )}
-
-                      {uploadProgress !== null && uploadProgress < 100 && (
-                        <div className="w-full text-center space-y-2">
-                          <p className="text-xs font-bold text-[#1D4ED8]">Mengunggah: {uploadProgress}%</p>
-                          <div className="w-full h-1.5 bg-[#EAE5E0] rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-[#1D4ED8] transition-all duration-100" 
-                              style={{ width: `${uploadProgress}%` }}
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      {newProductImage && uploadProgress === 100 && (
-                        <div className="flex flex-col items-center gap-2">
-                          <p className="text-[11px] font-bold text-green-600">✓ Gambar Siap Digunakan</p>
-                          <div className="w-20 h-20 rounded border border-[#EAE5E0] overflow-hidden bg-[#F5F3F0]">
-                            <img src={newProductImage} alt="Preview" className="w-full h-full object-cover" />
-                          </div>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setNewProductImage("");
-                              setUploadProgress(null);
-                            }}
-                            className="text-[10px] text-red-600 font-bold hover:underline"
-                          >
-                            Hapus Gambar
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                  newProductImages.length < 10 && (
                     <button
                       type="button"
                       onClick={() => setUseManualUrl(true)}
-                      className="text-[10px] text-[#8E8680] font-semibold hover:underline"
+                      className="text-[10px] text-[#8E8680] font-semibold hover:underline mt-1"
                     >
                       Masukkan URL Gambar Secara Manual
                     </button>
-                  </div>
+                  )
                 )}
               </div>
 

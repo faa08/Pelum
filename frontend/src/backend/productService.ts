@@ -12,6 +12,7 @@ export interface Product {
   stok: number;
   status: "Aktif" | "Stok Habis" | "Dalam Review";
   img: string;
+  images?: string[];
   desc: string;
   created_at: string;
   nama_brand?: string;
@@ -102,6 +103,23 @@ export const productService = {
         const catName = rawKategori?.nama_kategori || "UMKM Lokal";
         const catSlug = rawKategori?.nama_kategori ? rawKategori.nama_kategori.toLowerCase() : "kerajinan";
 
+        let images: string[] = [];
+        let coverImg = "/product-keramik.png";
+        if (p.img) {
+          try {
+            if (p.img.startsWith("[") && p.img.endsWith("]")) {
+              images = JSON.parse(p.img);
+            } else {
+              images = [p.img];
+            }
+          } catch {
+            images = [p.img];
+          }
+        }
+        if (images.length > 0) {
+          coverImg = images[0];
+        }
+
         return {
           id_produk: p.id_produk,
           id_seller: p.id_seller,
@@ -113,7 +131,8 @@ export const productService = {
           harga: Number(p.harga),
           stok: p.produk_stock,
           status: p.produk_stock > 0 ? "Aktif" : "Stok Habis",
-          img: p.img || "/product-keramik.png",
+          img: coverImg,
+          images: images,
           desc: p.desc || "",
           created_at: p.created_at,
           nama_brand: p.nama_brand,
@@ -157,6 +176,23 @@ export const productService = {
         const catName = rawKategori?.nama_kategori || "UMKM Lokal";
         const catSlug = rawKategori?.nama_kategori ? rawKategori.nama_kategori.toLowerCase() : "kerajinan";
 
+        let images: string[] = [];
+        let coverImg = "/product-keramik.png";
+        if (p.img) {
+          try {
+            if (p.img.startsWith("[") && p.img.endsWith("]")) {
+              images = JSON.parse(p.img);
+            } else {
+              images = [p.img];
+            }
+          } catch {
+            images = [p.img];
+          }
+        }
+        if (images.length > 0) {
+          coverImg = images[0];
+        }
+
         return {
           id_produk: p.id_produk,
           id_seller: p.id_seller,
@@ -168,7 +204,8 @@ export const productService = {
           harga: Number(p.harga),
           stok: p.produk_stock,
           status: p.produk_stock > 0 ? "Aktif" : "Stok Habis",
-          img: p.img || "/product-keramik.png",
+          img: coverImg,
+          images: images,
           desc: p.desc || "",
           created_at: p.created_at,
           nama_brand: p.nama_brand,
@@ -190,7 +227,7 @@ export const productService = {
     harga: number,
     stok: number,
     desc: string,
-    img?: string,
+    img?: string | string[],
     status: "Aktif" | "Stok Habis" | "Dalam Review" = "Aktif",
     nama_brand?: string,
     kode_produk?: string,
@@ -230,6 +267,31 @@ export const productService = {
       }
     }
 
+    const finalImg = Array.isArray(img) ? JSON.stringify(img) : (img || "https://images.unsplash.com/photo-1610701596007-11502861dcfa?q=80&w=200&auto=format&fit=crop");
+    
+    let images: string[] = [];
+    let coverImg = "/product-keramik.png";
+    if (Array.isArray(img)) {
+      images = img;
+      coverImg = img[0] || "/product-keramik.png";
+    } else if (img) {
+      try {
+        if (img.startsWith("[") && img.endsWith("]")) {
+          images = JSON.parse(img);
+          coverImg = images[0] || "/product-keramik.png";
+        } else {
+          images = [img];
+          coverImg = img;
+        }
+      } catch {
+        images = [img];
+        coverImg = img;
+      }
+    } else {
+      images = [finalImg];
+      coverImg = finalImg;
+    }
+
     const newProduct: Product = {
       id_produk: generatedId,
       id_seller: sellerId,
@@ -239,7 +301,8 @@ export const productService = {
       harga,
       stok,
       status,
-      img: img || "https://images.unsplash.com/photo-1610701596007-11502861dcfa?q=80&w=200&auto=format&fit=crop",
+      img: coverImg,
+      images: images,
       desc: desc || "Deskripsi produk baru",
       created_at: new Date().toISOString(),
       nama_brand: nama_brand || "UMKM Lokal",
@@ -251,7 +314,7 @@ export const productService = {
       console.warn("Using fallback local storage add product");
       const stored = localStorage.getItem("pelum_products");
       const products = stored ? JSON.parse(stored) : [];
-      products.push(newProduct);
+      products.push({ ...newProduct, img: finalImg }); // save full json in mock localStorage too
       localStorage.setItem("pelum_products", JSON.stringify(products));
       return newProduct;
     }
@@ -273,7 +336,7 @@ export const productService = {
           harga: newProduct.harga,
           produk_stock: newProduct.stok,
           stat_produk: newProduct.stok > 0 ? "tersedia" : "tidak tersedia",
-          img: newProduct.img,
+          img: finalImg,
           nama_brand: newProduct.nama_brand,
           kode_produk: newProduct.kode_produk,
           berat: newProduct.berat
@@ -299,13 +362,15 @@ export const productService = {
     harga: number,
     stok: number,
     desc: string,
-    img?: string,
+    img?: string | string[],
     status: "Aktif" | "Stok Habis" | "Dalam Review" = "Aktif",
     nama_brand?: string,
     kode_produk?: string,
     berat?: number
   ): Promise<boolean> {
     console.log("Calling productService.updateProduct for ID:", id_produk);
+
+    const finalImg = Array.isArray(img) ? JSON.stringify(img) : img;
 
     if (isPlaceholder()) {
       console.warn("Using fallback local storage update product");
@@ -326,6 +391,26 @@ export const productService = {
             if (foundMock) catName = foundMock.nama_kategori;
           }
 
+          let images: string[] = [];
+          let coverImg = "/product-keramik.png";
+          if (Array.isArray(img)) {
+            images = img;
+            coverImg = img[0] || "/product-keramik.png";
+          } else if (img) {
+            try {
+              if (img.startsWith("[") && img.endsWith("]")) {
+                images = JSON.parse(img);
+                coverImg = images[0] || "/product-keramik.png";
+              } else {
+                images = [img];
+                coverImg = img;
+              }
+            } catch {
+              images = [img];
+              coverImg = img;
+            }
+          }
+
           products[idx] = {
             ...products[idx],
             nama_produk,
@@ -333,7 +418,8 @@ export const productService = {
             harga,
             stok,
             status,
-            img: img || products[idx].img,
+            img: coverImg,
+            images: images,
             desc,
             nama_brand: nama_brand || products[idx].nama_brand,
             kode_produk: kode_produk || products[idx].kode_produk,
@@ -359,7 +445,7 @@ export const productService = {
           harga,
           produk_stock: stok,
           stat_produk: stok > 0 ? "tersedia" : "tidak tersedia",
-          img,
+          img: finalImg,
           desc,
           nama_brand,
           kode_produk,
@@ -475,6 +561,26 @@ export const productService = {
 
       const { data, error } = await query.maybeSingle();
       if (error) throw error;
+      if (data) {
+        let images: string[] = [];
+        let coverImg = "/product-keramik.png";
+        if (data.img) {
+          try {
+            if (data.img.startsWith("[") && data.img.endsWith("]")) {
+              images = JSON.parse(data.img);
+            } else {
+              images = [data.img];
+            }
+          } catch {
+            images = [data.img];
+          }
+        }
+        if (images.length > 0) {
+          coverImg = images[0];
+        }
+        data.images = images;
+        data.img = coverImg;
+      }
       return data;
     } catch (err) {
       console.error("productService.getProductBySlugOrId failed:", err);

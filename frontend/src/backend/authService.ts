@@ -7,7 +7,7 @@ export interface User {
   nama_lengkap: string;
   no_telp: string;
   avatar: string;
-  role: "customer" | "admin";
+  role: "customer" | "seller" | "admin";
   created_at: string;
   nama_toko?: string;
   jenis_kelamin?: string;
