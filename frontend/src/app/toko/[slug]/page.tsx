@@ -10,7 +10,7 @@ import { authService } from "@/backend/authService";
 import { sellerService } from "@/backend/sellerService";
 import { productService } from "@/backend/productService";
 import { cartService } from "@/backend/cartService";
-import { chatService } from "@/backend/chatService";
+import { useCustomerService } from "@/components/CustomerServiceProvider";
 import { 
   Store, 
   MapPin, 
@@ -57,6 +57,7 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
   const resolvedParams = use(params);
   const slug = resolvedParams.slug;
   const router = useRouter();
+  const { open: openCustomerService } = useCustomerService();
 
   const [seller, setSeller] = useState<any>(null);
   const [products, setProducts] = useState<any[]>([]);
@@ -90,19 +91,8 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
     }
   }
 
-  async function handleContactSeller() {
-    if (!currentUser) {
-      alert("Silakan masuk terlebih dahulu untuk mengirim pesan.");
-      router.push("/masuk");
-      return;
-    }
-    if (!seller) return;
-    const roomId = await chatService.getOrCreateChatRoom(currentUser.id_user, seller.id_seller);
-    if (roomId) {
-      window.open(`/chat?roomId=${roomId}`, "_blank", "noopener,noreferrer");
-    } else {
-      alert("Gagal memulai chat dengan penjual.");
-    }
+  function handleContactSeller() {
+    openCustomerService();
   }
 
   async function handleAddToCart(productItem: any) {

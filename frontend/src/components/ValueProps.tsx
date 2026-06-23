@@ -10,6 +10,7 @@ import {
   ArrowRight,
   Sparkles,
 } from "lucide-react";
+import "./ValueProps.css";
 
 const VALUE_PROPS = [
   {
@@ -80,7 +81,7 @@ export default function ValueProps() {
         </div>
 
         {/* ── Value Cards ── */}
-        <div className="value-props-grid-three value-props-grid-enhanced">
+        <div className="value-props-grid-enhanced">
           {VALUE_PROPS.map((item) => {
             const Icon = item.icon;
             return (

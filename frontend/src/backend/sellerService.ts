@@ -1,4 +1,18 @@
 import { supabase } from "./supabase";
+import { productService } from "./productService";
+
+export interface UpdateSellerInput {
+  nm_store?: string;
+  deskripsi?: string;
+  logo_toko?: string;
+  no_telp?: string;
+  addr?: string;
+  nama_bank?: string;
+  no_rek?: string;
+  atas_nama_rek?: string;
+  is_verified?: boolean;
+  nama_pemilik?: string;
+}
 
 export interface Seller {
   id_seller: string;
@@ -129,7 +143,7 @@ export const sellerService = {
     nama_bank: string,
     no_rek: string,
     atas_nama_rek: string,
-    is_verified: boolean = false,
+    is_verified: boolean = true,
     nama_pemilik?: string,
     logo_toko?: string
   ): Promise<Seller | null> {
@@ -320,15 +334,75 @@ export const sellerService = {
     }
   },
 
-  // Admin: Delete/Block a seller
+  // Admin: Update seller/store data
+  async updateSeller(id: string, data: UpdateSellerInput): Promise<boolean> {
+    console.log("Calling sellerService.updateSeller for:", id);
+
+    if (isPlaceholder()) {
+      const stored = localStorage.getItem("pelum_sellers");
+      if (!stored) return false;
+
+      const sellers = JSON.parse(stored) as Seller[];
+      const idx = sellers.findIndex((s) => s.id_seller === id);
+      if (idx === -1) return false;
+
+      const { nama_pemilik, ...sellerFields } = data;
+      sellers[idx] = { ...sellers[idx], ...sellerFields };
+      localStorage.setItem("pelum_sellers", JSON.stringify(sellers));
+
+      if (nama_pemilik && sellers[idx].id_user) {
+        const storedUsers = localStorage.getItem("pelum_users");
+        if (storedUsers) {
+          const users = JSON.parse(storedUsers);
+          const userIdx = users.findIndex((u: { id_user: string }) => u.id_user === sellers[idx].id_user);
+          if (userIdx !== -1) {
+            users[userIdx].nama_lengkap = nama_pemilik;
+            localStorage.setItem("pelum_users", JSON.stringify(users));
+          }
+        }
+      }
+      return true;
+    }
+
+    try {
+      const { nama_pemilik, ...sellerFields } = data;
+      if (Object.keys(sellerFields).length > 0) {
+        const { error } = await supabase.from("seller").update(sellerFields).eq("id_seller", id);
+        if (error) throw error;
+      }
+
+      if (nama_pemilik) {
+        const seller = await this.getSellerByIdOrSlug(id);
+        if (seller?.id_user) {
+          const { error: userError } = await supabase
+            .from("users")
+            .update({ nama_lengkap: nama_pemilik })
+            .eq("id_user", seller.id_user);
+          if (userError) throw userError;
+        }
+      }
+      return true;
+    } catch (err) {
+      console.error("sellerService.updateSeller failed:", err);
+      return false;
+    }
+  },
+
+  // Admin: Delete a seller and all related products
   async deleteSeller(id: string): Promise<boolean> {
     console.log("Calling sellerService.deleteSeller for:", id);
+
+    const productsDeleted = await productService.deleteProductsBySeller(id);
+    if (!productsDeleted) {
+      console.error("Failed to delete products for seller:", id);
+      return false;
+    }
 
     if (isPlaceholder()) {
       const stored = localStorage.getItem("pelum_sellers");
       if (stored) {
         const sellers = JSON.parse(stored) as Seller[];
-        const updated = sellers.filter(s => s.id_seller !== id);
+        const updated = sellers.filter((s) => s.id_seller !== id);
         localStorage.setItem("pelum_sellers", JSON.stringify(updated));
         return true;
       }
@@ -336,11 +410,7 @@ export const sellerService = {
     }
 
     try {
-      const { error } = await supabase
-        .from("seller")
-        .delete()
-        .eq("id_seller", id);
-
+      const { error } = await supabase.from("seller").delete().eq("id_seller", id);
       if (error) throw error;
       return true;
     } catch (err) {

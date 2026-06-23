@@ -49,6 +49,7 @@ function LoginForm() {
     if (err === "no_supabase") setErrorMsg("Login Google tidak tersedia pada mode lokal.");
     const msg = searchParams.get("msg");
     if (msg === "please_login") setErrorMsg("Silakan login terlebih dahulu untuk mengakses halaman tersebut.");
+    if (msg === "logged_out") setErrorMsg("Anda telah berhasil logout.");
   }, [searchParams]);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -75,7 +76,11 @@ function LoginForm() {
           router.push("/account/profile");
         }
       } else {
-        setErrorMsg("Login gagal! Email atau kata sandi salah. Silakan periksa kembali.");
+        if (!authService.isSupabaseConfigured()) {
+          setErrorMsg("Supabase belum dikonfigurasi. Buat file frontend/.env.local dari .env.local.example dan isi URL + API key Supabase Anda, lalu restart server.");
+        } else {
+          setErrorMsg("Login gagal! Email atau kata sandi salah. Silakan periksa kembali.");
+        }
       }
     } catch (err: any) {
       setErrorMsg(err.message || "Terjadi kesalahan saat login. Silakan coba lagi.");

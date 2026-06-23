@@ -14,10 +14,12 @@ import {
   User,
   Ticket,
   Share2,
-  LogOut
+  LogOut,
+  Headphones,
 } from "lucide-react";
 import { authService } from "@/backend/authService";
 import { useRouter } from "next/navigation";
+import { useCustomerService } from "@/components/CustomerServiceProvider";
 
 interface HeaderProps {
   cartCount?: number;
@@ -45,6 +47,7 @@ export default function Header({
   setSearchQuery,
 }: HeaderProps) {
   const router = useRouter();
+  const { open: openCustomerService } = useCustomerService();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>(INITIAL_NOTIFICATIONS);
@@ -168,10 +171,16 @@ export default function Header({
               </Link>
 
               {/* Chat Icon */}
-              <Link href="/chat" target="_blank" rel="noopener noreferrer" className="nav-cart-btn" id="chat-btn" title="Chat">
-                <MessageSquare size={18} className="nav-icon-orange" />
-                <span>Chat</span>
-              </Link>
+              <button
+                type="button"
+                onClick={openCustomerService}
+                className="nav-cart-btn"
+                id="cs-btn"
+                title="Customer Service"
+              >
+                <Headphones size={18} className="nav-icon-orange" />
+                <span>Bantuan</span>
+              </button>
 
               {/* Notification Button and Dropdown Card */}
               <div className="notif-container" ref={containerRef}>

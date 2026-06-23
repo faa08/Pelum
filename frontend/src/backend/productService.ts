@@ -37,6 +37,71 @@ const slugify = (text: string) => {
     .replace(/-+$/, ""); // Trim - from end
 };
 
+type GetProductsOptions = {
+  /** Hanya produk dari toko aktif dengan stok tersedia (untuk halaman publik) */
+  publicOnly?: boolean;
+  limit?: number;
+};
+
+const mapDbRowToProduct = (p: Record<string, unknown>): Product => {
+  const rawKategori = Array.isArray(p.kategori) ? p.kategori[0] : p.kategori;
+  const cat = rawKategori as { id_kategori?: string; nama_kategori?: string } | null | undefined;
+  const catName = cat?.nama_kategori || "UMKM Lokal";
+  const catSlug = cat?.nama_kategori ? slugify(cat.nama_kategori) : "kerajinan";
+
+  const rawSeller = Array.isArray(p.seller) ? p.seller[0] : p.seller;
+  const seller = rawSeller as { nm_store?: string; is_verified?: boolean } | null | undefined;
+
+  let images: string[] = [];
+  let coverImg = "/product-keramik.png";
+  const imgVal = p.img as string | undefined;
+  if (imgVal) {
+    try {
+      if (imgVal.startsWith("[") && imgVal.endsWith("]")) {
+        images = JSON.parse(imgVal);
+      } else {
+        images = [imgVal];
+      }
+    } catch {
+      images = [imgVal];
+    }
+  }
+  if (images.length > 0) {
+    coverImg = images[0];
+  }
+
+  const idProduk = p.id_produk as string;
+  const slug = (p.slug as string) || idProduk;
+
+  return {
+    id_produk: idProduk,
+    id_seller: p.id_seller as string,
+    nama_produk: p.nama_produk as string,
+    sku: slug ? `SKU-${slug.substring(0, 4).toUpperCase()}` : `SKU-${idProduk.substring(0, 4).toUpperCase()}`,
+    category: catName,
+    categorySlug: catSlug,
+    slug,
+    harga: Number(p.harga),
+    stok: Number(p.produk_stock),
+    status: Number(p.produk_stock) > 0 ? "Aktif" : "Stok Habis",
+    img: coverImg,
+    images,
+    desc: (p.desc as string) || "",
+    created_at: (p.created_at as string) || new Date().toISOString(),
+    nama_brand: seller?.nm_store || "UMKM Lokal",
+    kode_produk: `PRD-${idProduk.substring(0, 8).toUpperCase()}`,
+    berat: Number(p.berat) || 0,
+  };
+};
+
+const logSupabaseError = (label: string, error: { message?: string; details?: string; hint?: string; code?: string }) => {
+  console.error(label, error.message || error, {
+    details: error.details,
+    hint: error.hint,
+    code: error.code,
+  });
+};
+
 export const productService = {
   // Get all categories
   async getCategories(): Promise<{ id_kategori: string; nama_kategori: string }[]> {
@@ -79,67 +144,50 @@ export const productService = {
   },
 
   // Get all products
-  async getProducts(): Promise<Product[]> {
-    console.log("Calling productService.getProducts");
+  async getProducts(options?: GetProductsOptions): Promise<Product[]> {
+    console.log("Calling productService.getProducts", options);
 
     if (isPlaceholder()) {
       const stored = localStorage.getItem("pelum_products");
-      return stored ? JSON.parse(stored) : [];
+      let products: Product[] = stored ? JSON.parse(stored) : [];
+      if (options?.publicOnly) {
+        products = products.filter((p) => p.stok > 0 && p.status !== "Stok Habis");
+      }
+      if (options?.limit) {
+        products = products.slice(0, options.limit);
+      }
+      return products;
     }
 
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from("produk")
-        .select("*, kategori(id_kategori, nama_kategori)")
+        .select("*, kategori(id_kategori, nama_kategori), seller(id_seller, nm_store, is_verified)")
         .order("created_at", { ascending: false });
 
+      if (options?.limit) {
+        query = query.limit(options.limit);
+      }
+
+      const { data, error } = await query;
+
       if (error) {
-        console.error("Supabase get products error:", error);
+        logSupabaseError("Supabase get products error:", error);
         return [];
       }
 
-      return (data || []).map((p: any) => {
-        const rawKategori = Array.isArray(p.kategori) ? p.kategori[0] : p.kategori;
-        const catName = rawKategori?.nama_kategori || "UMKM Lokal";
-        const catSlug = rawKategori?.nama_kategori ? rawKategori.nama_kategori.toLowerCase() : "kerajinan";
+      let mapped = (data || []).map((p) => mapDbRowToProduct(p as Record<string, unknown>));
 
-        let images: string[] = [];
-        let coverImg = "/product-keramik.png";
-        if (p.img) {
-          try {
-            if (p.img.startsWith("[") && p.img.endsWith("]")) {
-              images = JSON.parse(p.img);
-            } else {
-              images = [p.img];
-            }
-          } catch {
-            images = [p.img];
-          }
-        }
-        if (images.length > 0) {
-          coverImg = images[0];
-        }
+      if (options?.publicOnly) {
+        mapped = mapped.filter((p) => {
+          const row = (data || []).find((d) => d.id_produk === p.id_produk) as Record<string, unknown> | undefined;
+          const rawSeller = row ? (Array.isArray(row.seller) ? row.seller[0] : row.seller) : null;
+          const isVerified = rawSeller?.is_verified !== false;
+          return p.stok > 0 && isVerified;
+        });
+      }
 
-        return {
-          id_produk: p.id_produk,
-          id_seller: p.id_seller,
-          nama_produk: p.nama_produk,
-          sku: p.slug ? `SKU-${p.slug.substr(0, 4).toUpperCase()}` : `SKU-${p.id_produk.substr(0, 4).toUpperCase()}`,
-          category: catName,
-          categorySlug: catSlug,
-          slug: p.slug || p.id_produk,
-          harga: Number(p.harga),
-          stok: p.produk_stock,
-          status: p.produk_stock > 0 ? "Aktif" : "Stok Habis",
-          img: coverImg,
-          images: images,
-          desc: p.desc || "",
-          created_at: p.created_at,
-          nama_brand: p.nama_brand,
-          kode_produk: p.kode_produk,
-          berat: p.berat || 0
-        };
-      });
+      return mapped;
     } catch (err) {
       console.error("productService getProducts failed:", err);
       return [];
@@ -162,57 +210,16 @@ export const productService = {
     try {
       const { data, error } = await supabase
         .from("produk")
-        .select("*, kategori(id_kategori, nama_kategori)")
+        .select("*, kategori(id_kategori, nama_kategori), seller(id_seller, nm_store, is_verified)")
         .eq("id_seller", sellerId)
         .order("created_at", { ascending: false });
 
       if (error) {
-        console.error("Supabase get products by seller error:", error);
+        logSupabaseError("Supabase get products by seller error:", error);
         return [];
       }
 
-      return (data || []).map((p: any) => {
-        const rawKategori = Array.isArray(p.kategori) ? p.kategori[0] : p.kategori;
-        const catName = rawKategori?.nama_kategori || "UMKM Lokal";
-        const catSlug = rawKategori?.nama_kategori ? rawKategori.nama_kategori.toLowerCase() : "kerajinan";
-
-        let images: string[] = [];
-        let coverImg = "/product-keramik.png";
-        if (p.img) {
-          try {
-            if (p.img.startsWith("[") && p.img.endsWith("]")) {
-              images = JSON.parse(p.img);
-            } else {
-              images = [p.img];
-            }
-          } catch {
-            images = [p.img];
-          }
-        }
-        if (images.length > 0) {
-          coverImg = images[0];
-        }
-
-        return {
-          id_produk: p.id_produk,
-          id_seller: p.id_seller,
-          nama_produk: p.nama_produk,
-          sku: p.slug ? `SKU-${p.slug.substr(0, 4).toUpperCase()}` : `SKU-${p.id_produk.substr(0, 4).toUpperCase()}`,
-          category: catName,
-          categorySlug: catSlug,
-          slug: p.slug || p.id_produk,
-          harga: Number(p.harga),
-          stok: p.produk_stock,
-          status: p.produk_stock > 0 ? "Aktif" : "Stok Habis",
-          img: coverImg,
-          images: images,
-          desc: p.desc || "",
-          created_at: p.created_at,
-          nama_brand: p.nama_brand,
-          kode_produk: p.kode_produk,
-          berat: p.berat || 0
-        };
-      });
+      return (data || []).map((p) => mapDbRowToProduct(p as Record<string, unknown>));
     } catch (err) {
       console.error("productService getProductsBySeller failed:", err);
       return [];
@@ -296,8 +303,10 @@ export const productService = {
       id_produk: generatedId,
       id_seller: sellerId,
       nama_produk,
-      sku: `SKU-${generatedId.substr(0, 4).toUpperCase()}`,
+      sku: `SKU-${generatedId.substring(0, 4).toUpperCase()}`,
       category: catName,
+      categorySlug: slugify(catName),
+      slug: productSlug,
       harga,
       stok,
       status,
@@ -314,7 +323,7 @@ export const productService = {
       console.warn("Using fallback local storage add product");
       const stored = localStorage.getItem("pelum_products");
       const products = stored ? JSON.parse(stored) : [];
-      products.push({ ...newProduct, img: finalImg }); // save full json in mock localStorage too
+      products.push({ ...newProduct, img: finalImg });
       localStorage.setItem("pelum_products", JSON.stringify(products));
       return newProduct;
     }
@@ -324,26 +333,41 @@ export const productService = {
       : null;
 
     try {
-      const { error } = await supabase
-        .from("produk")
-        .insert({
-          id_produk: newProduct.id_produk,
-          id_seller: newProduct.id_seller,
-          id_kategori: dbCategoryId,
-          nama_produk: newProduct.nama_produk,
-          slug: productSlug,
-          desc: newProduct.desc,
-          harga: newProduct.harga,
-          produk_stock: newProduct.stok,
-          stat_produk: newProduct.stok > 0 ? "tersedia" : "tidak tersedia",
-          img: finalImg,
-          nama_brand: newProduct.nama_brand,
-          kode_produk: newProduct.kode_produk,
-          berat: newProduct.berat
-        });
+      const { data: sellerRow, error: sellerError } = await supabase
+        .from("seller")
+        .select("id_seller")
+        .eq("id_seller", sellerId)
+        .maybeSingle();
+
+      if (sellerError) {
+        logSupabaseError("Supabase verify seller error:", sellerError);
+        return null;
+      }
+      if (!sellerRow) {
+        console.error("Toko tidak ditemukan untuk id_seller:", sellerId);
+        return null;
+      }
+
+      const insertPayload: Record<string, unknown> = {
+        id_produk: newProduct.id_produk,
+        id_seller: newProduct.id_seller,
+        nama_produk: newProduct.nama_produk,
+        slug: productSlug,
+        desc: newProduct.desc,
+        harga: newProduct.harga,
+        produk_stock: newProduct.stok,
+        stat_produk: newProduct.stok > 0 ? "tersedia" : "tidak tersedia",
+        img: finalImg,
+        berat: newProduct.berat || 0,
+      };
+      if (dbCategoryId) {
+        insertPayload.id_kategori = dbCategoryId;
+      }
+
+      const { error } = await supabase.from("produk").insert(insertPayload);
 
       if (error) {
-        console.error("Supabase insert product error:", error);
+        logSupabaseError("Supabase insert product error:", error);
         return null;
       }
 
@@ -437,30 +461,58 @@ export const productService = {
       : null;
 
     try {
+      const updatePayload: Record<string, unknown> = {
+        nama_produk,
+        harga,
+        produk_stock: stok,
+        stat_produk: stok > 0 ? "tersedia" : "tidak tersedia",
+        img: finalImg,
+        desc,
+        berat: berat || 0,
+        updated_at: new Date().toISOString(),
+      };
+      if (dbCategoryId) {
+        updatePayload.id_kategori = dbCategoryId;
+      } else {
+        updatePayload.id_kategori = null;
+      }
+
       const { error } = await supabase
         .from("produk")
-        .update({
-          nama_produk,
-          id_kategori: dbCategoryId,
-          harga,
-          produk_stock: stok,
-          stat_produk: stok > 0 ? "tersedia" : "tidak tersedia",
-          img: finalImg,
-          desc,
-          nama_brand,
-          kode_produk,
-          berat,
-          updated_at: new Date().toISOString()
-        })
+        .update(updatePayload)
         .eq("id_produk", id_produk);
 
       if (error) {
-        console.error("Supabase update product error:", error);
+        logSupabaseError("Supabase update product error:", error);
         return false;
       }
       return true;
     } catch (err) {
       console.error("productService.updateProduct failed:", err);
+      return false;
+    }
+  },
+
+  // Delete all products belonging to a seller (used when deleting a store)
+  async deleteProductsBySeller(sellerId: string): Promise<boolean> {
+    console.log("Calling productService.deleteProductsBySeller for:", sellerId);
+
+    if (isPlaceholder()) {
+      const stored = localStorage.getItem("pelum_products");
+      if (stored) {
+        const products = JSON.parse(stored) as Product[];
+        const updated = products.filter((p) => p.id_seller !== sellerId);
+        localStorage.setItem("pelum_products", JSON.stringify(updated));
+      }
+      return true;
+    }
+
+    try {
+      const { error } = await supabase.from("produk").delete().eq("id_seller", sellerId);
+      if (error) throw error;
+      return true;
+    } catch (err) {
+      console.error("productService deleteProductsBySeller failed:", err);
       return false;
     }
   },

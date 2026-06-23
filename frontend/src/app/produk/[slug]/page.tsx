@@ -434,8 +434,6 @@ export default function ProductDetailPage() {
               <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
                 <Link
                   href="/chat"
-                  target="_blank"
-                  rel="noopener noreferrer"
                   style={{
                     width: 48,
                     height: 48,
@@ -449,7 +447,7 @@ export default function ProductDetailPage() {
                     cursor: "pointer",
                     transition: "all 0.15s",
                   }}
-                  title="Chat dengan Penjual"
+                  title="Customer Service"
                 >
                   <MessageSquare size={20} />
                 </Link>
@@ -766,8 +764,6 @@ export default function ProductDetailPage() {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <Link
                     href="/chat"
-                    target="_blank"
-                    rel="noopener noreferrer"
                     style={{
                       display: "flex",
                       alignItems: "center",

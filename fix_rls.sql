@@ -53,6 +53,18 @@ CREATE POLICY "Allow anon delete product"
   ON produk FOR DELETE
   USING (true);
 
+-- Izinkan admin membaca semua produk (termasuk stok habis) via anon key
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'produk' AND policyname = 'Allow anon read all products'
+  ) THEN
+    CREATE POLICY "Allow anon read all products"
+      ON produk FOR SELECT
+      USING (true);
+  END IF;
+END $$;
+
 -- ── ORDER: izinkan baca semua untuk admin ────────────────────
 CREATE POLICY "Allow anon read orders"
   ON "order" FOR SELECT

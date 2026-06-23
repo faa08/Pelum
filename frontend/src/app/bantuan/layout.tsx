@@ -3,8 +3,9 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowLeft, Mail, MessageSquare } from "lucide-react";
+import { ArrowLeft, Headphones } from "lucide-react";
 import Footer from "@/components/Footer";
+import { useCustomerService } from "@/components/CustomerServiceProvider";
 
 const NAV_ITEMS = [
   { label: "Pusat Bantuan", href: "/bantuan" },
@@ -19,6 +20,7 @@ export default function HelpCenterLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const { open: openCustomerService } = useCustomerService();
 
   return (
     <div className="min-h-screen flex flex-col bg-surface">
@@ -45,15 +47,14 @@ export default function HelpCenterLayout({
           </div>
 
           <div className="flex items-center gap-5">
-            <Link
-              href="/chat"
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={openCustomerService}
               className="flex items-center gap-1.5 text-xs font-bold text-secondary hover:text-[#1D4ED8] transition"
             >
-              <Mail size={15} />
-              Pesan Bantuan
-            </Link>
+              <Headphones size={15} />
+              Customer Service
+            </button>
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-700 to-blue-950 flex items-center justify-center text-white text-xs font-bold border border-[#EAE5E0]">
               G
             </div>
@@ -89,29 +90,7 @@ export default function HelpCenterLayout({
         {children}
       </main>
 
-      {/* ── STICKY FLOATING CHAT WIDGET ── */}
-      <div className="fixed bottom-6 right-6 z-40 max-w-[340px] w-full bg-white border border-primary/20 rounded-xl p-4 shadow-xl flex items-center justify-between gap-3 animate-fade-in-up">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-primary-pale text-primary flex items-center justify-center flex-shrink-0 relative">
-            <span className="w-2.5 h-2.5 bg-green-500 rounded-full border border-white absolute bottom-0 right-0 animate-ping" />
-            <span className="w-2.5 h-2.5 bg-green-500 rounded-full border border-white absolute bottom-0 right-0" />
-            <MessageSquare size={18} />
-          </div>
-          <div>
-            <p className="text-[10px] text-secondary font-extrabold uppercase leading-none">Butuh Bantuan Lebih?</p>
-            <p className="text-xs font-extrabold text-on-surface mt-1 leading-snug">Mulai chat dengan TANYA</p>
-          </div>
-        </div>
-        <Link
-          href="/chat"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="bg-primary text-white text-[11px] font-extrabold px-3 py-2 rounded-lg hover:brightness-95 active:scale-95 transition flex-shrink-0"
-        >
-          Mulai Chat
-        </Link>
-      </div>
-
+      {/* Floating widget di halaman bantuan memakai tombol CS global (pojok kanan bawah) */}
       <Footer />
     </div>
   );

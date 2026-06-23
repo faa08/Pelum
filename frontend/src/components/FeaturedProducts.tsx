@@ -23,7 +23,7 @@ export default function FeaturedProducts({ searchQuery = "" }: FeaturedProductsP
   useEffect(() => {
     async function loadProducts() {
       try {
-        const data = await productService.getProducts();
+        const data = await productService.getProducts({ publicOnly: true, limit: 10 });
         const mapped = data.map((p: any) => ({
           id: p.id_produk,
           slug: p.slug || p.id_produk,
@@ -81,10 +81,16 @@ export default function FeaturedProducts({ searchQuery = "" }: FeaturedProductsP
             alignItems: "center",
             gap: 10
           }}>
-            <span className="material-symbols-outlined" style={{ fontSize: "40px", color: "#8E8680" }}>search_off</span>
-            <h3 style={{ fontSize: "1.05rem", fontWeight: 800, margin: 0 }}>Produk Tidak Ditemukan</h3>
+            <span className="material-symbols-outlined" style={{ fontSize: "40px", color: "#8E8680" }}>
+              {searchQuery ? "search_off" : "inventory_2"}
+            </span>
+            <h3 style={{ fontSize: "1.05rem", fontWeight: 800, margin: 0 }}>
+              {searchQuery ? "Produk Tidak Ditemukan" : "Belum Ada Produk"}
+            </h3>
             <p style={{ fontSize: "0.8125rem", color: "#8E8680", margin: 0, maxWidth: 360, lineHeight: 1.5 }}>
-              Maaf, tidak ada produk unggulan yang cocok dengan kata kunci &quot;<strong>{searchQuery}</strong>&quot;. Coba cari dengan kata kunci lain.
+              {searchQuery
+                ? `Maaf, tidak ada produk yang cocok dengan kata kunci "${searchQuery}". Coba kata kunci lain.`
+                : "Produk yang ditambahkan dari dashboard admin akan otomatis muncul di sini."}
             </p>
           </div>
         ) : (

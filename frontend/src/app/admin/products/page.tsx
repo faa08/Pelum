@@ -238,7 +238,9 @@ export default function AdminProductsPage() {
         loadData();
         handleCloseModal();
       } else {
-        alert("Gagal menambahkan produk.");
+        alert(
+          "Gagal menambahkan produk. Pastikan toko sudah terdaftar, kategori valid, dan policy RLS Supabase sudah dijalankan (fix_rls.sql)."
+        );
       }
     }
   };

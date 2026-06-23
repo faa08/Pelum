@@ -22,10 +22,21 @@ export interface ProfileUpdate {
 }
 
 const isPlaceholder = () => {
-  return !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder");
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key =
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  return !url || url.includes("placeholder") || !key || key.includes("placeholder");
 };
 
 export const authService = {
+  isSupabaseConfigured(): boolean {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key =
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    return Boolean(url && !url.includes("placeholder") && key && !key.includes("placeholder"));
+  },
   // Save active user session locally
   setCurrentUser(user: User | null): void {
     if (typeof window !== "undefined") {
@@ -53,14 +64,15 @@ export const authService = {
 
   // Login authentication
   async login(email: string, password?: string): Promise<User | null> {
-    console.log("Calling authService.login for email:", email);
+    const normalizedEmail = email.trim().toLowerCase();
+    console.log("Calling authService.login for email:", normalizedEmail);
     
     if (isPlaceholder()) {
       console.warn("Using fallback local storage login (no Supabase config found)");
       const storedUsers = localStorage.getItem("pelum_users");
       if (storedUsers) {
         const users = JSON.parse(storedUsers) as any[];
-        const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+        const user = users.find(u => u.email?.toLowerCase() === normalizedEmail);
         if (user) {
           if (password && user.password && user.password !== password) {
             console.error("Login failed: password mismatch");
@@ -77,44 +89,47 @@ export const authService = {
       const { data, error } = await supabase
         .from("users")
         .select("*")
-        .eq("email", email)
-        .single();
+        .ilike("email", normalizedEmail)
+        .maybeSingle();
 
       if (error) {
-        if (error.code === "PGRST116") {
-          console.warn("Supabase login: Email not found in database:", email);
-        } else {
-          console.error("Supabase login query error:", error.message || error);
-        }
+        console.error("Supabase login query error:", error.message || error);
         return null;
       }
 
-      if (data) {
-        // Password verification (check plain text password)
-        if (password && data.password && data.password !== password) {
-          console.error("Login failed: password mismatch");
-          return null;
-        }
-
-        let userRole = data.role;
-        if (data.username === "admin_pelum" || data.username === "admin" || (data.email && data.email.includes("admin"))) {
-          userRole = "admin";
-        }
-
-        const loggedUser: User = {
-          id_user: data.id_user,
-          username: data.username,
-          email: data.email,
-          nama_lengkap: data.nama_lengkap || data.username,
-          no_telp: data.no_telp || "",
-          avatar: data.avatar || "",
-          role: userRole,
-          created_at: data.created_at
-        };
-        this.setCurrentUser(loggedUser);
-        return loggedUser;
+      if (!data) {
+        console.warn("Supabase login: Email not found in database:", normalizedEmail);
+        return null;
       }
-      return null;
+
+      // Password verification (plain text — sesuai skema db.sql saat ini)
+      if (password && data.password && data.password !== password) {
+        console.error("Login failed: password mismatch");
+        return null;
+      }
+
+      if (password && !data.password) {
+        console.error("Login failed: user has no password set in database");
+        return null;
+      }
+
+      let userRole = data.role;
+      if (data.username === "admin_pelum" || data.username === "admin" || (data.email && data.email.includes("admin"))) {
+        userRole = "admin";
+      }
+
+      const loggedUser: User = {
+        id_user: data.id_user,
+        username: data.username,
+        email: data.email,
+        nama_lengkap: data.nama_lengkap || data.username,
+        no_telp: data.no_telp || "",
+        avatar: data.avatar || "",
+        role: userRole,
+        created_at: data.created_at
+      };
+      this.setCurrentUser(loggedUser);
+      return loggedUser;
     } catch (err) {
       console.error("Auth login request failed:", err);
       return null;
