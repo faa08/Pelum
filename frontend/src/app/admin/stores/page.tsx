@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { sellerService } from "@/backend/sellerService";
+import { supabase } from "@/backend/supabase";
 
 interface Store {
   id: string;
@@ -17,96 +19,37 @@ export default function AdminStoresPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [stores, setStores] = useState<Store[]>([]);
 
-  // Simulation loading data from Backend / DB
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      // Mocking empty state initially
-      setStores([]);
+  // Add store Modal States
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newStoreName, setNewStoreName] = useState("");
+  const [newStoreOwnerName, setNewStoreOwnerName] = useState("");
+  const [newStoreLogo, setNewStoreLogo] = useState("");
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      const data = await sellerService.getSellers();
+      const formatted: Store[] = data.map((s: any) => ({
+        id: s.id_seller,
+        nama: s.nm_store,
+        pemilik: s.users?.nama_lengkap || "Tanpa Nama",
+        kategori: "UMKM Lokal",
+        status: s.is_verified ? "Aktif" : "Menunggu",
+        logo: s.logo_toko || "https://images.unsplash.com/photo-1544816155-12df9643f363?q=80&w=100&auto=format&fit=crop",
+      }));
+      setStores(formatted);
+    } catch (error) {
+      console.error("Gagal memuat data toko:", error);
+      showToast("Gagal memuat data toko.", "error");
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
+  };
 
-    return () => clearTimeout(timer);
+  useEffect(() => {
+    loadData();
   }, []);
-
-  /* 
-    ==========================================================================
-    BACKEND INTEGRATION GUIDE (SUPABASE)
-    ==========================================================================
-    Untuk menyambungkan dengan Supabase (tabel seller + users), gunakan query berikut:
-
-    import { createClient } from "@supabase/supabase-js";
-    const supabase = createClient("SUPABASE_URL", "SUPABASE_ANON_KEY");
-
-    // 1. Fetch data semua toko
-    const fetchStores = async () => {
-      try {
-        setIsLoading(true);
-        const { data, error } = await supabase
-          .from("seller")
-          .select(`
-            id_seller,
-            nm_store,
-            logo_toko,
-            is_verified,
-            users (
-              nama_lengkap
-            )
-          `)
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-
-        // Transformasi format data ke state frontend
-        const formatted: Store[] = (data || []).map((s: any) => ({
-          id: s.id_seller,
-          nama: s.nm_store,
-          pemilik: s.users?.nama_lengkap || "Tanpa Nama",
-          kategori: "UMKM Lokal",
-          status: s.is_verified ? "Aktif" : "Menunggu",
-          logo: s.logo_toko || "https://images.unsplash.com/photo-1544816155-12df9643f363?q=80&w=100&auto=format&fit=crop", // Default logo
-        }));
-
-        setStores(formatted);
-      } catch (err) {
-        console.error("Gagal mengambil data toko:", err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    // 2. Aksi Blokir Toko (Delete/Deactivate di database)
-    const handleBlockStoreDB = async (id: string, name: string) => {
-      try {
-        // Contoh: Set status nonaktif (jika ada kolom status) atau hapus
-        const { error } = await supabase
-          .from("seller")
-          .delete() // atau mengupdate kolom keaktifan jika ada
-          .eq("id_seller", id);
-
-        if (error) throw error;
-        showToast(`Toko ${name} berhasil diblokir.`, "success");
-        // fetchStores();
-      } catch (err) {
-        console.error("Gagal memblokir toko:", err);
-      }
-    };
-
-    // 3. Aksi Verifikasi Toko Langsung (Update is_verified ke true)
-    const handleVerifyStoreDB = async (id: string, name: string) => {
-      try {
-        const { error } = await supabase
-          .from("seller")
-          .update({ is_verified: true })
-          .eq("id_seller", id);
-
-        if (error) throw error;
-        showToast(`Toko ${name} berhasil diverifikasi dan aktif!`, "success");
-        // fetchStores();
-      } catch (err) {
-        console.error("Gagal memverifikasi toko:", err);
-      }
-    };
-  */
 
   const showToast = (message: string, type: "info" | "error" | "success" = "info") => {
     const id = Date.now();
@@ -116,18 +59,128 @@ export default function AdminStoresPage() {
     }, 4000);
   };
 
-  const handleBlockStore = (id: string, name: string) => {
+  const handleBlockStore = async (id: string, name: string) => {
     if (confirm(`Apakah Anda yakin ingin memblokir toko ${name}?`)) {
-      setStores((prev) => prev.filter((s) => s.id !== id));
-      showToast(`Toko ${name} telah berhasil diblokir.`, "error");
+      const success = await sellerService.deleteSeller(id);
+      if (success) {
+        setStores((prev) => prev.filter((s) => s.id !== id));
+        showToast(`Toko ${name} telah berhasil diblokir.`, "error");
+      } else {
+        showToast(`Gagal memblokir toko ${name}.`, "error");
+      }
     }
   };
 
-  const handleVerifyStore = (id: string, name: string) => {
-    setStores((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, status: "Aktif" } : s))
-    );
-    showToast(`Toko ${name} berhasil diverifikasi dan aktif!`, "success");
+  const handleVerifyStore = async (id: string, name: string) => {
+    const success = await sellerService.verifySeller(id, true);
+    if (success) {
+      setStores((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, status: "Aktif" } : s))
+      );
+      showToast(`Toko ${name} berhasil diverifikasi dan aktif!`, "success");
+    } else {
+      showToast(`Gagal memverifikasi toko ${name}.`, "error");
+    }
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      if (file.size > 2 * 1024 * 1024) {
+        alert("Ukuran gambar logo terlalu besar! Maksimal adalah 2MB.");
+        return;
+      }
+
+      setUploadProgress(0);
+      setNewStoreLogo("");
+
+      const fileExt = file.name.split('.').pop();
+      const fileName = `logo-${Math.random().toString(36).substring(2, 15)}-${Date.now()}.${fileExt}`;
+      const filePath = `store-logos/${fileName}`;
+
+      let uploadedUrl = "";
+      try {
+        setUploadProgress(20);
+        const { data, error } = await supabase.storage
+          .from("products")
+          .upload(filePath, file, {
+            cacheControl: '3600',
+            upsert: false
+          });
+
+        if (error) throw error;
+        setUploadProgress(80);
+
+        const { data: publicUrlData } = supabase.storage
+          .from("products")
+          .getPublicUrl(filePath);
+
+        if (publicUrlData && publicUrlData.publicUrl) {
+          uploadedUrl = publicUrlData.publicUrl;
+        } else {
+          throw new Error("Gagal mendapatkan public URL.");
+        }
+
+        setUploadProgress(100);
+        setNewStoreLogo(uploadedUrl);
+      } catch (err) {
+        console.warn("Gagal mengunggah ke Supabase Storage, menggunakan mode fallback base64...", err);
+        setUploadProgress(50);
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          if (event.target && event.target.result) {
+            setNewStoreLogo(event.target.result as string);
+            setUploadProgress(100);
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+  };
+
+  const handleCloseModal = () => {
+    setShowAddModal(false);
+    setNewStoreName("");
+    setNewStoreOwnerName("");
+    setNewStoreLogo("");
+    setUploadProgress(null);
+  };
+
+  const handleAddStoreSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newStoreName.trim() || !newStoreOwnerName.trim()) {
+      alert("Nama Toko dan Nama Pemilik wajib diisi.");
+      return;
+    }
+
+    // Generate email dari nama toko supaya tidak perlu diisi manual
+    const generatedEmail = `${newStoreName.toLowerCase().replace(/\s+/g, ".").replace(/[^a-z0-9.]/g, "")}@pelataranumkm.id`;
+
+    try {
+      const newStore = await sellerService.createStore(
+        newStoreName,
+        generatedEmail,
+        "",   // phone — opsional
+        "",   // deskripsi — opsional
+        "",   // alamat — opsional
+        "",   // bank — opsional
+        "",   // no rek — opsional
+        "",   // atas nama — opsional
+        false,
+        newStoreOwnerName,
+        newStoreLogo || undefined
+      );
+
+      if (newStore) {
+        showToast(`Toko ${newStoreName} berhasil ditambahkan!`, "success");
+        loadData();
+        handleCloseModal();
+      } else {
+        showToast("Gagal menambahkan toko. Nama toko mungkin sudah terdaftar.", "error");
+      }
+    } catch (err: any) {
+      showToast(err.message || "Gagal menambahkan toko.", "error");
+    }
   };
 
   const filteredStores = stores.filter(
@@ -210,8 +263,8 @@ export default function AdminStoresPage() {
             Filter
           </button>
           <button 
-            onClick={() => showToast("Fitur Tambah Toko Baru hanya dapat diakses dalam mode produksi.", "info")}
-            className="flex items-center gap-2 px-4 py-3 bg-primary text-white font-semibold text-sm rounded-lg hover:brightness-95 transition"
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-2 px-4 py-3 bg-[#1D4ED8] hover:bg-blue-700 text-white font-semibold text-sm rounded-lg transition"
           >
             <span className="material-symbols-outlined text-[20px]">add</span>
             Tambah Toko Baru
@@ -371,6 +424,104 @@ export default function AdminStoresPage() {
           </div>
         ))}
       </div>
+
+      {/* Stateful Add Store Modal Overlay */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-6 backdrop-blur-xs">
+          <div className="bg-white border border-[#EAE5E0] rounded-xl max-w-lg w-full overflow-hidden shadow-xl animate-scale-in">
+            <div className="px-6 py-4 border-b border-[#EAE5E0] flex justify-between items-center bg-[#F5F3F0]/50">
+              <h3 className="font-headline font-bold text-base text-[#1F1B18]">
+                Tambah Toko Baru
+              </h3>
+              <button 
+                onClick={handleCloseModal}
+                className="text-[#8E8680] hover:text-[#1F1B18] transition"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            
+            <form onSubmit={handleAddStoreSubmit} className="p-6 space-y-5 font-semibold text-xs text-[#5C5550]">
+
+              {/* Nama Toko */}
+              <div className="space-y-1.5">
+                <label className="block text-[11px] uppercase tracking-wider text-[#8E8680]">
+                  Nama Toko <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newStoreName}
+                  onChange={(e) => setNewStoreName(e.target.value)}
+                  placeholder="contoh: Griya Keramik Kasongan"
+                  className="w-full px-3.5 py-2.5 border border-[#D5CFC9] rounded-lg bg-[#F5F3F0] focus:outline-none focus:ring-1 focus:ring-[#1D4ED8] focus:border-[#1D4ED8] text-xs text-[#1F1B18]"
+                />
+              </div>
+
+              {/* Nama Pemilik */}
+              <div className="space-y-1.5">
+                <label className="block text-[11px] uppercase tracking-wider text-[#8E8680]">
+                  Nama Pemilik Toko <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newStoreOwnerName}
+                  onChange={(e) => setNewStoreOwnerName(e.target.value)}
+                  placeholder="Nama lengkap pemilik toko"
+                  className="w-full px-3.5 py-2.5 border border-[#D5CFC9] rounded-lg bg-[#F5F3F0] focus:outline-none focus:ring-1 focus:ring-[#1D4ED8] focus:border-[#1D4ED8] text-xs text-[#1F1B18]"
+                />
+              </div>
+
+              {/* Logo Toko */}
+              <div className="space-y-2">
+                <label className="block text-[11px] uppercase tracking-wider text-[#8E8680]">
+                  Logo Toko <span className="text-[#8E8680] font-normal normal-case">(opsional)</span>
+                </label>
+
+                {/* Preview */}
+                {newStoreLogo && (
+                  <div className="flex items-center gap-3 p-3 bg-[#F5F3F0] rounded-lg border border-[#EAE5E0]">
+                    <div className="w-12 h-12 rounded-lg overflow-hidden border border-[#D5CFC9] flex-shrink-0">
+                      <img src={newStoreLogo} alt="Preview logo" className="w-full h-full object-cover" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-[#1F1B18]">Logo berhasil diunggah</p>
+                      <p className="text-[10px] text-[#8E8680] truncate">{newStoreLogo.substring(0, 50)}...</p>
+                    </div>
+                    <button type="button" onClick={() => setNewStoreLogo("")} className="text-[#8E8680] hover:text-red-500 transition flex-shrink-0">
+                      <span className="material-symbols-outlined text-[18px]">close</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Upload button */}
+                <label className="flex items-center justify-center gap-2 w-full h-10 border-2 border-dashed border-[#D5CFC9] rounded-lg cursor-pointer hover:border-[#1D4ED8] hover:bg-blue-50/30 transition text-[#8E8680] hover:text-[#1D4ED8]">
+                  <span className="material-symbols-outlined text-[18px]">upload</span>
+                  <span className="text-xs font-semibold">
+                    {uploadProgress !== null && uploadProgress < 100 ? `Mengunggah... ${uploadProgress}%` : "Klik untuk upload gambar"}
+                  </span>
+                  <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+                </label>
+                <p className="text-[10px] text-[#8E8680]">Format JPG, PNG, WebP. Maks 2 MB. Rekomendasi 400×400px.</p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex justify-end gap-3 pt-2 border-t border-[#EAE5E0]">
+                <button type="button" onClick={handleCloseModal}
+                  className="px-4 py-2 border border-[#D5CFC9] text-[#5C5550] hover:bg-[#F5F3F0] text-xs font-bold rounded-lg transition">
+                  Batal
+                </button>
+                <button type="submit"
+                  className="px-5 py-2 bg-[#1D4ED8] text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[16px]">add</span>
+                  Tambah Toko
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
