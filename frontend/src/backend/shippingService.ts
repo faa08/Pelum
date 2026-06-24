@@ -69,10 +69,12 @@ export const shippingService = {
   async createShipment(
     orderId: string,
     courier: string,
-    resi?: string
+    resi?: string,
+    estimasiTiba?: string
   ): Promise<boolean> {
     const estArrival = new Date();
     estArrival.setDate(estArrival.getDate() + 3); // 3 days estimate
+    const estimasiDate = estimasiTiba || estArrival.toISOString().split("T")[0];
 
     if (isPlaceholder()) {
       const key = `pelum_shipments`;
@@ -85,7 +87,7 @@ export const shippingService = {
         kurir: courier,
         no_resi: resi,
         stat_kirim: resi ? "sedang_dikirim" : "belum_dikirim",
-        estimasi_tiba: estArrival.toISOString().split("T")[0],
+        estimasi_tiba: estimasiDate,
         tgl_dikirim: resi ? new Date().toISOString() : undefined,
         created_at: new Date().toISOString()
       });
@@ -108,6 +110,7 @@ export const shippingService = {
             kurir: courier,
             no_resi: resi || null,
             stat_kirim: resi ? "sedang_dikirim" : "belum_dikirim",
+            estimasi_tiba: estimasiDate,
             tgl_dikirim: resi ? new Date().toISOString() : null
           })
           .eq("id_pengiriman", existing.id_pengiriman);
@@ -120,7 +123,7 @@ export const shippingService = {
             kurir: courier,
             no_resi: resi || null,
             stat_kirim: resi ? "sedang_dikirim" : "belum_dikirim",
-            estimasi_tiba: estArrival.toISOString().split("T")[0],
+            estimasi_tiba: estimasiDate,
             tgl_dikirim: resi ? new Date().toISOString() : null
           });
         if (error) throw error;
