@@ -56,7 +56,7 @@ Keunggulan platform:
 - Tentang kami: /tentang
 - Hubungi kami: /kontak
 - Kebijakan privasi: /kebijakan-privasi
-- Customer Service AI (chat ini): tombol headphone pojok kanan bawah atau /chat
+- Customer Service: tombol headphone pojok kanan bawah atau /chat — ada 2 tab: **Tanya AI** (otomatis) dan **Chat Admin** (manusia, perlu login)
 
 ## AKUN & KEAMANAN
 - Belanja dan checkout memerlukan login — daftar dulu di /daftar jika belum punya akun

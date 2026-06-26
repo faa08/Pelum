@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { AlertCircle } from "lucide-react";
+import Link from "next/link";
+import { AlertCircle, MessageCircle } from "lucide-react";
 import { adminService, type AdminOrder } from "@/backend/adminService";
 import { shippingService } from "@/backend/shippingService";
+import { getPaymentBadgeClass } from "@/lib/checkoutConstants";
 
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<AdminOrder[]>([]);
@@ -44,7 +46,13 @@ export default function AdminOrdersPage() {
     }
   };
 
+  const handleCompleteOrder = async (uuid: string) => {
+    const updated = await adminService.updateOrderStatus(uuid, "selesai");
+    if (updated) fetchOrders();
+  };
+
   const needShippingCount = orders.filter((o) => o.status === "Perlu Dikirim").length;
+  const needChatCount = orders.filter((o) => o.needsShippingChat).length;
 
   const filteredOrders = orders.filter((o) => {
     const matchTab = activeTab === "Semua" || o.status === activeTab;
@@ -93,6 +101,21 @@ export default function AdminOrdersPage() {
         </div>
       )}
 
+      {needChatCount > 0 && (
+        <div className="flex items-start gap-3 bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3 text-sm text-indigo-900">
+          <MessageCircle size={18} className="flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-bold">{needChatCount} pesanan QRIS menunggu chat pengiriman</p>
+            <p className="text-xs mt-0.5 text-indigo-700">
+              Setelah pembeli bayar QRIS, admin wajib chat pembeli untuk koordinasi alamat, kurir, dan jadwal kirim.
+            </p>
+            <Link href="/admin/chat?tab=shipping" className="inline-block mt-2 text-xs font-bold text-[#1D4ED8] hover:underline">
+              Buka Pusat Chat Pengiriman →
+            </Link>
+          </div>
+        </div>
+      )}
+
       <section className="bg-white border border-[#EAE5E0] rounded-lg p-1 flex flex-wrap gap-1 shadow-sm">
         {tabs.map((tab) => {
           const isSelected = activeTab === tab;
@@ -130,7 +153,7 @@ export default function AdminOrdersPage() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-[#F5F3F0] border-b border-[#EAE5E0]">
-                  {["ID Pesanan", "Tanggal", "Toko UMKM", "Pelanggan", "Produk", "Total", "Status"].map((h) => (
+                  {["ID Pesanan", "Tanggal", "Toko UMKM", "Pelanggan", "Produk", "Total", "Pembayaran", "Status"].map((h) => (
                     <th key={h} className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-[#5C5550]">
                       {h}
                     </th>
@@ -172,6 +195,16 @@ export default function AdminOrdersPage() {
                       Rp {order.total.toLocaleString("id-ID")}
                     </td>
                     <td className="px-6 py-4">
+                      <span
+                        className={`inline-block px-2.5 py-0.5 text-[10px] font-bold rounded-full border ${getPaymentBadgeClass(order.paymentKind)}`}
+                      >
+                        {order.paymentLabel}
+                      </span>
+                      <p className="text-[10px] text-[#8E8680] mt-1 max-w-[140px] leading-snug">
+                        {order.paymentDesc}
+                      </p>
+                    </td>
+                    <td className="px-6 py-4">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span
                           className={`px-2.5 py-0.5 text-[10px] font-bold rounded-full border ${
@@ -188,12 +221,34 @@ export default function AdminOrdersPage() {
                         >
                           {order.status}
                         </span>
-                        {order.status === "Perlu Dikirim" && (
+                        {order.needsShippingChat && (
+                          <Link
+                            href={`/admin/chat?tab=shipping&order=${order.uuid}`}
+                            className="flex items-center gap-1 bg-indigo-600 text-white text-[10px] font-bold px-3 py-1.5 rounded hover:bg-indigo-700 transition"
+                          >
+                            <MessageCircle size={12} />
+                            Chat Pembeli
+                          </Link>
+                        )}
+                        {order.status === "Perlu Dikirim" && order.paymentKind === "digital" && (
                           <button
                             onClick={() => handleShipOrder(order.uuid)}
                             className="bg-[#1D4ED8] text-white text-[10px] font-bold px-3 py-1.5 rounded hover:bg-blue-700 transition"
                           >
                             Kirim Barang
+                          </button>
+                        )}
+                        {order.status === "Perlu Dikirim" && order.paymentKind === "pickup" && (
+                          <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded">
+                            Pickup di toko
+                          </span>
+                        )}
+                        {(order.status === "Dikirim" || order.status === "Perlu Dikirim") && (
+                          <button
+                            onClick={() => handleCompleteOrder(order.uuid)}
+                            className="bg-green-600 text-white text-[10px] font-bold px-3 py-1.5 rounded hover:bg-green-700 transition"
+                          >
+                            Tandai Selesai
                           </button>
                         )}
                       </div>
@@ -202,7 +257,7 @@ export default function AdminOrdersPage() {
                 ))}
                 {filteredOrders.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center text-[#8E8680] text-sm font-semibold">
+                    <td colSpan={8} className="py-12 text-center text-[#8E8680] text-sm font-semibold">
                       {orders.length === 0
                         ? "Belum ada pesanan di database."
                         : "Tidak ada pesanan ditemukan."}

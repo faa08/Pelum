@@ -1,12 +1,15 @@
 "use client";
 
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Headphones, X, Send, Bot, Loader2 } from "lucide-react";
+import { Headphones, X, Send, Bot, Loader2, UserCircle } from "lucide-react";
 import "./CustomerService.css";
 import { CUSTOMER_SERVICE_WELCOME } from "@/data/customerServiceKnowledge";
+import { authService } from "@/backend/authService";
+import { supportChatService, SupportChatMessage } from "@/backend/supportChatService";
 
-interface Message {
+interface AiMessage {
   id: string;
   role: "user" | "assistant";
   text: string;
@@ -28,19 +31,21 @@ export function useCustomerService() {
   return ctx;
 }
 
-const WELCOME_MESSAGE: Message = {
+const WELCOME_MESSAGE: AiMessage = {
   id: "welcome",
   role: "assistant",
   text: CUSTOMER_SERVICE_WELCOME,
   time: "",
 };
 
+type ChatMode = "ai" | "admin";
+
 function formatTime() {
   return new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
 }
 
-function CustomerServiceChat({ onClose, fullPage = false }: { onClose?: () => void; fullPage?: boolean }) {
-  const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
+function AiChatPanel() {
+  const [messages, setMessages] = useState<AiMessage[]>([WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -54,7 +59,7 @@ function CustomerServiceChat({ onClose, fullPage = false }: { onClose?: () => vo
     const text = input.trim();
     if (!text || loading) return;
 
-    const userMsg: Message = {
+    const userMsg: AiMessage = {
       id: `u-${Date.now()}`,
       role: "user",
       text,
@@ -78,15 +83,15 @@ function CustomerServiceChat({ onClose, fullPage = false }: { onClose?: () => vo
       });
 
       const data = await res.json();
-
-      const assistantMsg: Message = {
-        id: `a-${Date.now()}`,
-        role: "assistant",
-        text: res.ok ? data.reply : data.error || "Maaf, terjadi kesalahan.",
-        time: formatTime(),
-      };
-
-      setMessages((prev) => [...prev, assistantMsg]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `a-${Date.now()}`,
+          role: "assistant",
+          text: res.ok ? data.reply : data.error || "Maaf, terjadi kesalahan.",
+          time: formatTime(),
+        },
+      ]);
     } catch {
       setMessages((prev) => [
         ...prev,
@@ -103,27 +108,7 @@ function CustomerServiceChat({ onClose, fullPage = false }: { onClose?: () => vo
   };
 
   return (
-    <div className={`cs-chat ${fullPage ? "cs-chat--full" : ""}`}>
-      <div className="cs-chat-header">
-        <div className="cs-chat-header-info">
-          <div className="cs-chat-avatar">
-            <Bot size={20} />
-          </div>
-          <div>
-            <h3 className="cs-chat-title">Customer Service</h3>
-            <p className="cs-chat-status">
-              <span className="cs-online-dot" />
-              TANYA AI · Online
-            </p>
-          </div>
-        </div>
-        {onClose && (
-          <button type="button" className="cs-close-btn" onClick={onClose} aria-label="Tutup">
-            <X size={18} />
-          </button>
-        )}
-      </div>
-
+    <div className="cs-panel-body">
       <div className="cs-messages">
         {messages.map((msg) => (
           <div key={msg.id} className={`cs-message cs-message--${msg.role}`}>
@@ -151,13 +136,12 @@ function CustomerServiceChat({ onClose, fullPage = false }: { onClose?: () => vo
         )}
         <div ref={messagesEndRef} />
       </div>
-
       <form className="cs-input-area" onSubmit={sendMessage}>
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Ketik pertanyaan Anda..."
+          placeholder="Tanya AI — ketik pertanyaan..."
           disabled={loading}
           className="cs-input"
         />
@@ -165,6 +149,206 @@ function CustomerServiceChat({ onClose, fullPage = false }: { onClose?: () => vo
           <Send size={16} />
         </button>
       </form>
+    </div>
+  );
+}
+
+function AdminChatPanel() {
+  const [chatId, setChatId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<SupportChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [initError, setInitError] = useState("");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [user, setUser] = useState<ReturnType<typeof authService.getCurrentUser>>(null);
+
+  useEffect(() => {
+    setUser(authService.getCurrentUser());
+  }, []);
+
+  useEffect(() => {
+    async function init() {
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+      setInitError("");
+      const id = await supportChatService.ensureRoom(user.id_user);
+      if (id) {
+        setChatId(id);
+        const msgs = await supportChatService.getMessages(id);
+        setMessages(msgs);
+      } else {
+        setInitError(
+          "Chat belum siap. Jalankan migrasi support_chat di Supabase SQL Editor, lalu refresh halaman."
+        );
+      }
+      setLoading(false);
+    }
+    init();
+  }, [user]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const sendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !input.trim() || sending) return;
+
+    setSending(true);
+    setInitError("");
+
+    let activeChatId = chatId;
+    if (!activeChatId) {
+      activeChatId = await supportChatService.ensureRoom(user.id_user);
+      if (activeChatId) setChatId(activeChatId);
+    }
+
+    if (!activeChatId) {
+      setInitError("Gagal mengirim pesan. Periksa migrasi database support_chat di Supabase.");
+      setSending(false);
+      return;
+    }
+
+    const ok = await supportChatService.sendMessage(activeChatId, "customer", user.id_user, input.trim());
+    if (ok) {
+      const msgs = await supportChatService.getMessages(activeChatId);
+      setMessages(msgs);
+      setInput("");
+    } else {
+      setInitError("Pesan gagal terkirim. Coba lagi sebentar.");
+    }
+    setSending(false);
+  };
+
+  if (!user) {
+    return (
+      <div className="cs-admin-login-prompt">
+        <UserCircle size={40} className="cs-admin-login-icon" />
+        <p className="cs-admin-login-title">Masuk untuk chat admin</p>
+        <p className="cs-admin-login-desc">
+          Chat dengan tim Pelataran UMKM untuk bantuan pesanan, pembayaran, dan return.
+        </p>
+        <Link href="/masuk?redirect=/chat" className="cs-admin-login-btn">
+          Masuk / Daftar
+        </Link>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="cs-admin-login-prompt">
+        <Loader2 size={28} className="cs-spinner" />
+        <p className="cs-admin-login-desc">Memuat chat admin...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="cs-panel-body">
+      {initError && (
+        <div className="cs-admin-error" role="alert">
+          {initError}
+        </div>
+      )}
+      <div className="cs-messages">
+        {messages.map((msg) => {
+          const isAdmin = msg.sender_role === "admin";
+          return (
+            <div
+              key={msg.id_message}
+              className={`cs-message ${isAdmin ? "cs-message--assistant cs-message--human" : "cs-message--user"}`}
+            >
+              {isAdmin && (
+                <div className="cs-msg-avatar cs-msg-avatar--human">
+                  <Headphones size={14} />
+                </div>
+              )}
+              <div className="cs-msg-bubble">
+                {isAdmin && <span className="cs-msg-label">Admin</span>}
+                <p>{msg.text}</p>
+                <span className="cs-msg-time">
+                  {new Date(msg.created_at).toLocaleTimeString("id-ID", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+        <div ref={messagesEndRef} />
+      </div>
+      <form className="cs-input-area" onSubmit={sendMessage}>
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Chat admin — tulis pesan..."
+          disabled={sending}
+          className="cs-input"
+        />
+        <button
+          type="submit"
+          disabled={!input.trim() || sending}
+          className="cs-send-btn cs-send-btn--admin"
+          aria-label="Kirim"
+        >
+          <Send size={16} />
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function CustomerServiceChat({ onClose, fullPage = false }: { onClose?: () => void; fullPage?: boolean }) {
+  const [mode, setMode] = useState<ChatMode>("ai");
+
+  return (
+    <div className={`cs-chat ${fullPage ? "cs-chat--full" : ""}`}>
+      <div className="cs-chat-header">
+        <div className="cs-chat-header-info">
+          <div className="cs-chat-avatar">
+            {mode === "ai" ? <Bot size={20} /> : <Headphones size={20} />}
+          </div>
+          <div>
+            <h3 className="cs-chat-title">Customer Service</h3>
+            <p className="cs-chat-status">
+              <span className="cs-online-dot" />
+              {mode === "ai" ? "TANYA AI · Online" : "Chat Admin · Online"}
+            </p>
+          </div>
+        </div>
+        {onClose && (
+          <button type="button" className="cs-close-btn" onClick={onClose} aria-label="Tutup">
+            <X size={18} />
+          </button>
+        )}
+      </div>
+
+      <div className="cs-mode-tabs">
+        <button
+          type="button"
+          className={`cs-mode-tab ${mode === "ai" ? "cs-mode-tab--active" : ""}`}
+          onClick={() => setMode("ai")}
+        >
+          <Bot size={14} />
+          Tanya AI
+        </button>
+        <button
+          type="button"
+          className={`cs-mode-tab ${mode === "admin" ? "cs-mode-tab--active" : ""}`}
+          onClick={() => setMode("admin")}
+        >
+          <Headphones size={14} />
+          Chat Admin
+        </button>
+      </div>
+
+      {mode === "ai" ? <AiChatPanel /> : <AdminChatPanel />}
     </div>
   );
 }
@@ -182,7 +366,6 @@ export default function CustomerServiceProvider({ children }: { children: React.
     <CustomerServiceContext.Provider value={{ open, close, toggle, isOpen }}>
       {children}
 
-      {/* Floating button — hidden on full /chat page */}
       {!isChatPage && (
         <>
           <button

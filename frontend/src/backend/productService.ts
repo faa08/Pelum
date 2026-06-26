@@ -1,5 +1,25 @@
 import { supabase } from "./supabase";
 
+export interface ProductVariantOption {
+  name: string;
+  image?: string;
+  price?: number;
+}
+
+export interface ProductVariant {
+  label: string;
+  options: ProductVariantOption[];
+}
+
+export interface ProductExtras {
+  bahan?: string;
+  asal_produk?: string;
+  ketahanan?: string;
+  info_tambahan?: string;
+  variants?: ProductVariant[];
+  berat?: number;
+}
+
 export interface Product {
   id_produk: string;
   id_seller: string;
@@ -17,7 +37,11 @@ export interface Product {
   created_at: string;
   nama_brand?: string;
   kode_produk?: string;
-  variants?: { label: string; values: string[] }[];
+  variants?: ProductVariant[];
+  bahan?: string;
+  asal_produk?: string;
+  ketahanan?: string;
+  info_tambahan?: string;
   berat?: number;
 }
 
@@ -30,18 +54,128 @@ const slugify = (text: string) => {
     .toString()
     .toLowerCase()
     .trim()
-    .replace(/\s+/g, "-") // Replace spaces with -
-    .replace(/[^\w\-]+/g, "") // Remove all non-word chars
-    .replace(/\-\-+/g, "-") // Replace multiple - with single -
-    .replace(/^-+/, "") // Trim - from start
-    .replace(/-+$/, ""); // Trim - from end
+    .replace(/\s+/g, "-")
+    .replace(/[^\w\-]+/g, "")
+    .replace(/\-\-+/g, "-")
+    .replace(/^-+/, "")
+    .replace(/-+$/, "");
 };
+
+function parseVariants(raw: unknown): ProductVariant[] {
+  if (!raw) return [];
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (!Array.isArray(parsed)) return [];
+
+    const groups: ProductVariant[] = [];
+    for (const v of parsed) {
+      if (!v || typeof v.label !== "string") continue;
+      const label = String(v.label).trim();
+      if (!label) continue;
+
+      if (Array.isArray(v.options)) {
+        const options = v.options
+          .map((o: Record<string, unknown>) => ({
+            name: String(o.name ?? "").trim(),
+            image: o.image ? String(o.image) : undefined,
+            price: o.price != null && o.price !== "" ? Number(o.price) : undefined,
+          }))
+          .filter((o) => o.name);
+        if (options.length) groups.push({ label, options });
+        continue;
+      }
+
+      // format lama: { label, values: string[] }
+      if (Array.isArray(v.values)) {
+        const options = v.values
+          .map((x: unknown) => ({ name: String(x).trim() }))
+          .filter((o) => o.name);
+        if (options.length) groups.push({ label, options });
+      }
+    }
+    return groups;
+  } catch {
+    return [];
+  }
+}
 
 type GetProductsOptions = {
   /** Hanya produk dari toko aktif dengan stok tersedia (untuk halaman publik) */
   publicOnly?: boolean;
   limit?: number;
+  /** Muat semua kolom (termasuk gambar/deskripsi penuh) — hanya untuk admin */
+  includeFullDetails?: boolean;
+  /** Muat kolom img untuk thumbnail (admin / toko mitra) */
+  includeImages?: boolean;
 };
+
+function buildListSelect(publicOnly?: boolean, includeImages?: boolean) {
+  const sellerRel = publicOnly ? "seller!inner" : "seller";
+  const imgCol = includeImages ? ", img" : "";
+  return `
+    id_produk, id_seller, id_kategori, nama_produk, slug, harga, berat,
+    bahan, asal_produk, ketahanan, produk_stock, stat_produk, created_at, cover_img${imgCol},
+    kategori ( id_kategori, nama_kategori ),
+    ${sellerRel} ( id_seller, nm_store, is_verified )
+  `;
+}
+
+const PRODUCT_FULL_SELECT = `
+  *,
+  kategori ( id_kategori, nama_kategori ),
+  seller ( id_seller, nm_store, is_verified )
+`;
+
+/** URL/thumbnail ringan untuk listing — hindari base64 besar di query list */
+function extractCoverImg(img: string | null | undefined): string | null {
+  if (!img) return null;
+  const trimmed = img.trim();
+  if (!trimmed || trimmed.startsWith("data:")) return null;
+  if (trimmed.startsWith("http") || trimmed.startsWith("/")) {
+    return trimmed.length <= 2048 ? trimmed : trimmed.slice(0, 2048);
+  }
+  if (trimmed.startsWith("[")) {
+    try {
+      const arr = JSON.parse(trimmed) as unknown[];
+      for (const item of arr) {
+        const url = String(item ?? "").trim();
+        if (url && !url.startsWith("data:") && (url.startsWith("http") || url.startsWith("/"))) {
+          return url.length <= 2048 ? url : url.slice(0, 2048);
+        }
+      }
+    } catch {
+      return null;
+    }
+  }
+  return trimmed.length <= 2048 ? trimmed : null;
+}
+
+function resolveProductImages(cover_img?: string | null, img?: string | null): { cover: string; images: string[] } {
+  const fallback = "/product-keramik.png";
+  const coverUrl = cover_img?.trim();
+  if (coverUrl) {
+    return { cover: coverUrl, images: [coverUrl] };
+  }
+
+  const raw = img?.trim();
+  if (!raw) {
+    return { cover: fallback, images: [] };
+  }
+
+  if (raw.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(raw) as unknown[];
+      const images = parsed.map((item) => String(item ?? "").trim()).filter(Boolean);
+      if (images.length > 0) {
+        return { cover: images[0], images };
+      }
+    } catch {
+      // lanjut ke single string
+    }
+  }
+
+  return { cover: raw, images: [raw] };
+}
 
 const mapDbRowToProduct = (p: Record<string, unknown>): Product => {
   const rawKategori = Array.isArray(p.kategori) ? p.kategori[0] : p.kategori;
@@ -52,23 +186,10 @@ const mapDbRowToProduct = (p: Record<string, unknown>): Product => {
   const rawSeller = Array.isArray(p.seller) ? p.seller[0] : p.seller;
   const seller = rawSeller as { nm_store?: string; is_verified?: boolean } | null | undefined;
 
-  let images: string[] = [];
-  let coverImg = "/product-keramik.png";
-  const imgVal = p.img as string | undefined;
-  if (imgVal) {
-    try {
-      if (imgVal.startsWith("[") && imgVal.endsWith("]")) {
-        images = JSON.parse(imgVal);
-      } else {
-        images = [imgVal];
-      }
-    } catch {
-      images = [imgVal];
-    }
-  }
-  if (images.length > 0) {
-    coverImg = images[0];
-  }
+  const { cover: coverImg, images } = resolveProductImages(
+    p.cover_img as string | undefined,
+    p.img as string | undefined
+  );
 
   const idProduk = p.id_produk as string;
   const slug = (p.slug as string) || idProduk;
@@ -77,7 +198,7 @@ const mapDbRowToProduct = (p: Record<string, unknown>): Product => {
     id_produk: idProduk,
     id_seller: p.id_seller as string,
     nama_produk: p.nama_produk as string,
-    sku: slug ? `SKU-${slug.substring(0, 4).toUpperCase()}` : `SKU-${idProduk.substring(0, 4).toUpperCase()}`,
+    sku: `SKU-${idProduk.replace(/-/g, "").substring(0, 8).toUpperCase()}`,
     category: catName,
     categorySlug: catSlug,
     slug,
@@ -91,6 +212,11 @@ const mapDbRowToProduct = (p: Record<string, unknown>): Product => {
     nama_brand: seller?.nm_store || "UMKM Lokal",
     kode_produk: `PRD-${idProduk.substring(0, 8).toUpperCase()}`,
     berat: Number(p.berat) || 0,
+    bahan: (p.bahan as string) || undefined,
+    asal_produk: (p.asal_produk as string) || undefined,
+    ketahanan: (p.ketahanan as string) || undefined,
+    info_tambahan: (p.info_tambahan as string) || undefined,
+    variants: parseVariants(p.varian),
   };
 };
 
@@ -143,30 +269,36 @@ export const productService = {
     }
   },
 
-  // Get all products
+  // Get all products (query ringan — tanpa img/varian/deskripsi penuh kecuali includeFullDetails)
   async getProducts(options?: GetProductsOptions): Promise<Product[]> {
-    console.log("Calling productService.getProducts", options);
-
     if (isPlaceholder()) {
       const stored = localStorage.getItem("pelum_products");
       let products: Product[] = stored ? JSON.parse(stored) : [];
       if (options?.publicOnly) {
         products = products.filter((p) => p.stok > 0 && p.status !== "Stok Habis");
       }
-      if (options?.limit) {
-        products = products.slice(0, options.limit);
-      }
+      const cap = options?.limit ?? 200;
+      products = products.slice(0, cap);
       return products;
     }
 
     try {
+      const selectCols = options?.includeFullDetails
+        ? PRODUCT_FULL_SELECT
+        : buildListSelect(options?.publicOnly, options?.includeImages);
+      const cap = options?.limit ?? 200;
+
       let query = supabase
         .from("produk")
-        .select("*, kategori(id_kategori, nama_kategori), seller(id_seller, nm_store, is_verified)")
-        .order("created_at", { ascending: false });
+        .select(selectCols)
+        .order("created_at", { ascending: false })
+        .limit(cap);
 
-      if (options?.limit) {
-        query = query.limit(options.limit);
+      if (options?.publicOnly) {
+        query = query
+          .eq("stat_produk", "tersedia")
+          .gt("produk_stock", 0)
+          .eq("seller.is_verified", true);
       }
 
       const { data, error } = await query;
@@ -176,18 +308,7 @@ export const productService = {
         return [];
       }
 
-      let mapped = (data || []).map((p) => mapDbRowToProduct(p as Record<string, unknown>));
-
-      if (options?.publicOnly) {
-        mapped = mapped.filter((p) => {
-          const row = (data || []).find((d) => d.id_produk === p.id_produk) as Record<string, unknown> | undefined;
-          const rawSeller = row ? (Array.isArray(row.seller) ? row.seller[0] : row.seller) : null;
-          const isVerified = rawSeller?.is_verified !== false;
-          return p.stok > 0 && isVerified;
-        });
-      }
-
-      return mapped;
+      return (data || []).map((p) => mapDbRowToProduct(p as Record<string, unknown>));
     } catch (err) {
       console.error("productService getProducts failed:", err);
       return [];
@@ -196,8 +317,6 @@ export const productService = {
 
   // Get products by seller ID
   async getProductsBySeller(sellerId: string): Promise<Product[]> {
-    console.log("Calling productService.getProductsBySeller for seller ID:", sellerId);
-
     if (isPlaceholder()) {
       const stored = localStorage.getItem("pelum_products");
       if (stored) {
@@ -210,9 +329,10 @@ export const productService = {
     try {
       const { data, error } = await supabase
         .from("produk")
-        .select("*, kategori(id_kategori, nama_kategori), seller(id_seller, nm_store, is_verified)")
+        .select(buildListSelect(false, true))
         .eq("id_seller", sellerId)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .limit(200);
 
       if (error) {
         logSupabaseError("Supabase get products by seller error:", error);
@@ -238,7 +358,7 @@ export const productService = {
     status: "Aktif" | "Stok Habis" | "Dalam Review" = "Aktif",
     nama_brand?: string,
     kode_produk?: string,
-    berat?: number
+    extras?: ProductExtras
   ): Promise<Product | null> {
     console.log("Calling productService.addProduct for product:", nama_produk);
 
@@ -316,7 +436,12 @@ export const productService = {
       created_at: new Date().toISOString(),
       nama_brand: nama_brand || "UMKM Lokal",
       kode_produk: finalKodeProduk,
-      berat: berat || 0
+      berat: extras?.berat || 0,
+      bahan: extras?.bahan,
+      asal_produk: extras?.asal_produk,
+      ketahanan: extras?.ketahanan,
+      info_tambahan: extras?.info_tambahan,
+      variants: extras?.variants || [],
     };
 
     if (isPlaceholder()) {
@@ -358,7 +483,13 @@ export const productService = {
         produk_stock: newProduct.stok,
         stat_produk: newProduct.stok > 0 ? "tersedia" : "tidak tersedia",
         img: finalImg,
+        cover_img: extractCoverImg(finalImg),
         berat: newProduct.berat || 0,
+        bahan: newProduct.bahan || null,
+        asal_produk: newProduct.asal_produk || null,
+        ketahanan: newProduct.ketahanan || null,
+        info_tambahan: newProduct.info_tambahan || null,
+        varian: newProduct.variants || [],
       };
       if (dbCategoryId) {
         insertPayload.id_kategori = dbCategoryId;
@@ -390,7 +521,7 @@ export const productService = {
     status: "Aktif" | "Stok Habis" | "Dalam Review" = "Aktif",
     nama_brand?: string,
     kode_produk?: string,
-    berat?: number
+    extras?: ProductExtras
   ): Promise<boolean> {
     console.log("Calling productService.updateProduct for ID:", id_produk);
 
@@ -447,7 +578,12 @@ export const productService = {
             desc,
             nama_brand: nama_brand || products[idx].nama_brand,
             kode_produk: kode_produk || products[idx].kode_produk,
-            berat: berat || 0
+            berat: extras?.berat ?? products[idx].berat ?? 0,
+            bahan: extras?.bahan ?? products[idx].bahan,
+            asal_produk: extras?.asal_produk ?? products[idx].asal_produk,
+            ketahanan: extras?.ketahanan ?? products[idx].ketahanan,
+            info_tambahan: extras?.info_tambahan ?? products[idx].info_tambahan,
+            variants: extras?.variants ?? products[idx].variants ?? [],
           };
           localStorage.setItem("pelum_products", JSON.stringify(products));
           return true;
@@ -467,8 +603,14 @@ export const productService = {
         produk_stock: stok,
         stat_produk: stok > 0 ? "tersedia" : "tidak tersedia",
         img: finalImg,
+        cover_img: extractCoverImg(typeof finalImg === "string" ? finalImg : null),
         desc,
-        berat: berat || 0,
+        berat: extras?.berat ?? 0,
+        bahan: extras?.bahan || null,
+        asal_produk: extras?.asal_produk || null,
+        ketahanan: extras?.ketahanan || null,
+        info_tambahan: extras?.info_tambahan || null,
+        varian: extras?.variants || [],
         updated_at: new Date().toISOString(),
       };
       if (dbCategoryId) {
@@ -517,16 +659,17 @@ export const productService = {
     }
   },
 
-  // Delete product
-  async deleteProduct(sku: string): Promise<boolean> {
-    console.log("Calling productService.deleteProduct for SKU / slug suffix:", sku);
+  // Delete product by id (preferred) or legacy SKU string
+  async deleteProduct(idOrSku: string): Promise<boolean> {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrSku);
 
     if (isPlaceholder()) {
-      console.warn("Using fallback local storage delete product");
       const stored = localStorage.getItem("pelum_products");
       if (stored) {
         const products = JSON.parse(stored) as Product[];
-        const updated = products.filter(p => p.sku !== sku);
+        const updated = products.filter((p) =>
+          isUuid ? p.id_produk !== idOrSku : p.sku !== idOrSku
+        );
         localStorage.setItem("pelum_products", JSON.stringify(updated));
         return true;
       }
@@ -534,8 +677,15 @@ export const productService = {
     }
 
     try {
-      // Find the product by parsing SKU or deleting matching record.
-      // Since SKU is mapped from slug/ID, let's query all products, find the matching one, and delete by id_produk.
+      if (isUuid) {
+        const { error } = await supabase.from("produk").delete().eq("id_produk", idOrSku);
+        if (error) {
+          console.error("Supabase delete product error:", error);
+          return false;
+        }
+        return true;
+      }
+
       const { data: allProducts, error: fetchErr } = await supabase
         .from("produk")
         .select("id_produk, slug");
@@ -545,15 +695,14 @@ export const productService = {
         return false;
       }
 
-      const productToDelete = (allProducts || []).find((p: any) => {
-        const mappedSku = p.slug ? `SKU-${p.slug.substr(0, 4).toUpperCase()}` : `SKU-${p.id_produk.substr(0, 4).toUpperCase()}`;
-        return mappedSku === sku;
+      const productToDelete = (allProducts || []).find((p: { id_produk: string; slug?: string }) => {
+        const mappedSku = p.slug
+          ? `SKU-${p.slug.substring(0, 4).toUpperCase()}`
+          : `SKU-${p.id_produk.substring(0, 4).toUpperCase()}`;
+        return mappedSku === idOrSku;
       });
 
-      if (!productToDelete) {
-        console.error("Product with matching SKU not found for deletion:", sku);
-        return false;
-      }
+      if (!productToDelete) return false;
 
       const { error } = await supabase
         .from("produk")
@@ -580,15 +729,19 @@ export const productService = {
       const products = stored ? JSON.parse(stored) : [];
       const item = products.find((p: any) => p.id_produk === slugOrId || p.slug === slugOrId || p.sku === slugOrId);
       if (item) {
-        return {
+        const mapped = mapDbRowToProduct({
           ...item,
-          // Attach mock seller
+          varian: item.varian ?? item.variants,
+          produk_stock: item.produk_stock ?? item.stok,
+        } as Record<string, unknown>);
+        return {
+          ...mapped,
           seller: {
             id_seller: item.id_seller,
             nm_store: "Toko Mitra UMKM",
             logo_toko: "",
-            is_verified: true
-          }
+            is_verified: true,
+          },
         };
       }
       return null;
@@ -601,7 +754,7 @@ export const productService = {
         .from("produk")
         .select(`
           *,
-          seller ( id_seller, nm_store, logo_toko, is_verified ),
+          seller ( id_seller, nm_store, logo_toko, is_verified, deskripsi, addr, no_telp, created_at ),
           kategori ( id_kategori, nama_kategori )
         `);
 
@@ -613,27 +766,14 @@ export const productService = {
 
       const { data, error } = await query.maybeSingle();
       if (error) throw error;
-      if (data) {
-        let images: string[] = [];
-        let coverImg = "/product-keramik.png";
-        if (data.img) {
-          try {
-            if (data.img.startsWith("[") && data.img.endsWith("]")) {
-              images = JSON.parse(data.img);
-            } else {
-              images = [data.img];
-            }
-          } catch {
-            images = [data.img];
-          }
-        }
-        if (images.length > 0) {
-          coverImg = images[0];
-        }
-        data.images = images;
-        data.img = coverImg;
-      }
-      return data;
+      if (!data) return null;
+
+      const mapped = mapDbRowToProduct(data as Record<string, unknown>);
+      return {
+        ...mapped,
+        seller: data.seller,
+        kategori: data.kategori,
+      };
     } catch (err) {
       console.error("productService.getProductBySlugOrId failed:", err);
       return null;
@@ -764,5 +904,124 @@ export const productService = {
       console.error("productService.updateProductStock failed:", err);
       return false;
     }
-  }
+  },
+
+  async getProductStats(
+    productIds: string[]
+  ): Promise<Record<string, { rating: number; sold: number; reviewCount: number }>> {
+    const result: Record<string, { rating: number; sold: number; reviewCount: number }> = {};
+    if (!productIds.length) return result;
+
+    for (const id of productIds) {
+      result[id] = { rating: 0, sold: 0, reviewCount: 0 };
+    }
+
+    if (isPlaceholder()) return result;
+
+    try {
+      const { data: reviews } = await supabase
+        .from("review")
+        .select("id_produk, rating")
+        .in("id_produk", productIds);
+
+      if (reviews) {
+        const buckets = new Map<string, number[]>();
+        for (const r of reviews) {
+          const list = buckets.get(r.id_produk) || [];
+          list.push(Number(r.rating));
+          buckets.set(r.id_produk, list);
+        }
+        for (const [id, ratings] of buckets) {
+          const avg = ratings.reduce((a, b) => a + b, 0) / ratings.length;
+          result[id] = { ...result[id], rating: Math.round(avg * 10) / 10, reviewCount: ratings.length };
+        }
+      }
+
+      const { data: orderItems } = await supabase
+        .from("order_item")
+        .select("id_produk, qty_orderitem, order!inner ( stat_order )")
+        .in("id_produk", productIds)
+        .eq("order.stat_order", "selesai");
+
+      if (orderItems) {
+        for (const item of orderItems) {
+          const cur = result[item.id_produk];
+          if (cur) {
+            cur.sold += Number(item.qty_orderitem);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("productService.getProductStats failed:", err);
+    }
+
+    return result;
+  },
+
+  async searchProducts(query: string, limit = 50): Promise<Product[]> {
+    const all = await this.getProducts({ publicOnly: true, limit: 200, includeImages: true });
+    const q = query.trim().toLowerCase();
+    if (!q) return all.slice(0, limit);
+    return all
+      .filter(
+        (p) =>
+          p.nama_produk.toLowerCase().includes(q) ||
+          p.category.toLowerCase().includes(q) ||
+          (p.desc && p.desc.toLowerCase().includes(q))
+      )
+      .slice(0, limit);
+  },
+
+  async getSimilarProducts(
+    productId: string,
+    categorySlug?: string,
+    sellerId?: string,
+    limit = 5
+  ): Promise<Product[]> {
+    const all = await this.getProducts({ publicOnly: true, limit: 100 });
+    const filtered = all.filter((p) => {
+      if (p.id_produk === productId) return false;
+      if (categorySlug && p.categorySlug === categorySlug) return true;
+      if (sellerId && p.id_seller === sellerId) return true;
+      return false;
+    });
+    if (filtered.length >= limit) return filtered.slice(0, limit);
+    const rest = all.filter((p) => p.id_produk !== productId && !filtered.includes(p));
+    return [...filtered, ...rest].slice(0, limit);
+  },
+
+  async getStoreReviews(sellerId: string): Promise<
+    { id: string; user: string; rating: number; time: string; text: string }[]
+  > {
+    if (isPlaceholder()) return [];
+
+    try {
+      const { data, error } = await supabase
+        .from("review_toko")
+        .select(`id_review_toko, rating, komentar, created_at, users ( nama_lengkap, username )`)
+        .eq("id_seller", sellerId)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      return (data || []).map((r: Record<string, unknown>) => {
+        const user = Array.isArray(r.users) ? r.users[0] : r.users;
+        const u = user as { nama_lengkap?: string; username?: string } | null;
+        const name = u?.nama_lengkap || u?.username || "Pembeli";
+        return {
+          id: r.id_review_toko as string,
+          user: name,
+          rating: Number(r.rating),
+          time: new Date(r.created_at as string).toLocaleDateString("id-ID", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          }),
+          text: (r.komentar as string) || "",
+        };
+      });
+    } catch (err) {
+      console.error("productService.getStoreReviews failed:", err);
+      return [];
+    }
+  },
 };

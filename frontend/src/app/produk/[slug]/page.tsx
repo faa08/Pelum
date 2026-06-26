@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -17,6 +17,14 @@ import Navbar from "@/components/Navbar";
 import SearchBar from "@/components/SearchBar";
 import Footer from "@/components/Footer";
 import { productService, Product } from "@/backend/productService";
+import { storeNameToSlug, type Seller } from "@/backend/sellerService";
+import { authService } from "@/backend/authService";
+import { cartService } from "@/backend/cartService";
+import { returnService } from "@/backend/returnService";
+import { orderService } from "@/backend/orderService";
+import { supabase } from "@/backend/supabase";
+import { productToCard, type ProductCard } from "@/lib/productUi";
+import { useCustomerService } from "@/components/CustomerServiceProvider";
 
 const THUMBNAILS = [
   "/product-detail-keramik.png",
@@ -33,16 +41,41 @@ const COLORS = [
 
 const SIZES = ["12 cm", "15 cm", "18 cm"];
 
-const SIMILAR_PRODUCTS = [
-  { id: 1, name: "Gelas Keramik Motif Batik Indigo", price: 75000, rating: 4.8, sold: 120, image: "/similar-1.png" },
-  { id: 2, name: "Piring Dekoratif Batik Parang", price: 95000, rating: 5.0, sold: 45, image: "/similar-2.png" },
-  { id: 3, name: "Set Wadah Sambel Keramik", price: 120000, rating: 4.7, sold: 80, image: "/similar-3.png" },
-  { id: 4, name: "Vas Bunga Keramik Kontemporer", price: 210000, rating: 4.9, sold: 30, image: "/similar-4.png" },
-  { id: 5, name: "Teko Keramik Handmade Tradisional", price: 320000, rating: 4.6, sold: 15, image: "/similar-5.png" },
-];
-
 function formatPrice(p: number) {
   return `Rp ${p.toLocaleString("id-ID")}`;
+}
+
+function getVariantPriceRange(product: Product): string {
+  const prices = new Set<number>([product.harga]);
+  product.variants?.forEach((g) => {
+    g.options.forEach((o) => {
+      if (o.price != null && o.price > 0) prices.add(o.price);
+    });
+  });
+  const arr = [...prices].sort((a, b) => a - b);
+  if (arr.length <= 1) return formatPrice(arr[0]);
+  return `${formatPrice(arr[0])} - ${formatPrice(arr[arr.length - 1])}`;
+}
+
+function getSelectedVariantPrice(product: Product, activeVariants: Record<number, number>): number {
+  let price = product.harga;
+  product.variants?.forEach((group, gi) => {
+    const oi = activeVariants[gi] ?? 0;
+    const opt = group.options[oi];
+    if (opt?.price != null && opt.price > 0) price = opt.price;
+  });
+  return price;
+}
+
+function getSelectedVariantLabel(product: Product, activeVariants: Record<number, number>): string {
+  if (!product.variants?.length) return "";
+  return product.variants
+    .map((g, gi) => {
+      const oi = activeVariants[gi] ?? 0;
+      return g.options[oi]?.name;
+    })
+    .filter(Boolean)
+    .join(", ");
 }
 
 interface Review {
@@ -51,31 +84,95 @@ interface Review {
   avatar: string;
   time: string;
   rating: number;
-  comment: string;
+  text: string;
+  image?: string | null;
 }
 
-const INITIAL_REVIEWS: Review[] = [
-  {
-    id: "r1",
-    name: "Budi Nugraha",
-    avatar: "BN",
-    time: "2 hari yang lalu",
-    rating: 5,
-    comment: "Barangnya sangat bagus, packing sangat aman dengan bubble wrap tebal. Motif batiknya rapi dan warnanya persis seperti di foto. Sangat direkomendasikan!"
+function isWeakDetailText(value?: string | null): boolean {
+  if (!value?.trim()) return true;
+  const t = value.trim();
+  if (t === "-" || t === "—") return true;
+  if (t.length <= 3 && /^[a-z]+$/i.test(t)) return true;
+  return false;
+}
+
+function buildProductInfoDisplay(product: Product) {
+  const cat = (product.category || "").toLowerCase();
+  const isKeramik = cat.includes("keramik") || cat.includes("kerajinan");
+  const isTekstil = cat.includes("batik") || cat.includes("tekstil") || cat.includes("kain");
+
+  let bahan = product.bahan?.trim();
+  if (isWeakDetailText(bahan)) {
+    if (isKeramik) bahan = "Keramik food-grade, aman untuk makanan & minuman";
+    else if (isTekstil) bahan = "Kain katun / rayon premium, nyaman di kulit";
+    else bahan = "Bahan pilihan berkualitas dari pengrajin UMKM";
   }
-];
+
+  let asal = product.asal_produk?.trim();
+  if (isWeakDetailText(asal)) {
+    asal = "Buatan tangan pengrajin lokal Indonesia";
+  }
+
+  let berat: string;
+  if (product.berat && product.berat > 0) {
+    berat = `${product.berat.toLocaleString("id-ID")} gram`;
+  } else if (isKeramik) {
+    berat = "Estimasi 400–800 gram (tergantung ukuran)";
+  } else {
+    berat = "Estimasi 300–600 gram";
+  }
+
+  let ketahanan = product.ketahanan?.trim();
+  if (isWeakDetailText(ketahanan)) {
+    if (isKeramik) ketahanan = "Tahan panas ringan, hindari benturan keras";
+    else if (isTekstil) ketahanan = "Warna tahan luntur dengan perawatan sesuai label";
+    else ketahanan = "Dirancang untuk pemakaian harian dengan perawatan rutin";
+  }
+
+  let deskripsi = product.desc?.trim();
+  if (isWeakDetailText(deskripsi)) {
+    deskripsi =
+      `${product.nama_produk} adalah produk unggulan UMKM yang diproduksi secara teliti oleh pengrajin lokal. ` +
+      "Setiap unit melalui pengecekan kualitas sebelum dikirim. Dengan membeli produk ini, Anda turut mendukung ekonomi kreatif dan pelestarian kerajinan Indonesia.";
+  }
+  const extra = product.info_tambahan?.trim();
+  if (!isWeakDetailText(extra) && extra && !deskripsi.includes(extra)) {
+    deskripsi = `${deskripsi}\n\n${extra}`;
+  }
+
+  return { bahan, asal, berat, ketahanan, deskripsi };
+}
 
 export default function ProductDetailPage() {
   const params = useParams();
+  const router = useRouter();
+  const { open: openCustomerService } = useCustomerService();
   const slug = params ? (Array.isArray(params.slug) ? params.slug[0] : params.slug) : "";
 
   const [product, setProduct] = useState<Product | null>(null);
+  const [seller, setSeller] = useState<Seller | null>(null);
   const [loading, setLoading] = useState(true);
+  const [addingCart, setAddingCart] = useState(false);
   const [activeVariants, setActiveVariants] = useState<{ [key: number]: number }>({});
+  const [qty, setQty] = useState(1);
 
   const [activeImg, setActiveImg] = useState(0);
   const [activeColor, setActiveColor] = useState(0);
   const [activeSize, setActiveSize] = useState(0);
+
+  const [similarProducts, setSimilarProducts] = useState<ProductCard[]>([]);
+
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [canReview, setCanReview] = useState(false);
+  const [reviewOrderId, setReviewOrderId] = useState<string | null>(null);
+  const [hasReviewed, setHasReviewed] = useState(false);
+  const [newRating, setNewRating] = useState(5);
+  const [hoverRating, setHoverRating] = useState<number | null>(null);
+  const [newReviewText, setNewReviewText] = useState("");
+  const [reviewFileName, setReviewFileName] = useState("");
+  const [reviewUploadProgress, setReviewUploadProgress] = useState<number | null>(null);
+  const [reviewImgUrl, setReviewImgUrl] = useState<string | null>(null);
+  const [soldCount, setSoldCount] = useState(0);
 
   useEffect(() => {
     async function loadProduct() {
@@ -84,22 +181,79 @@ export default function ProductDetailPage() {
         return;
       }
       try {
-        const allProducts = await productService.getProducts();
-        const found = allProducts.find(
-          (p) => 
-            p.id_produk === slug || 
-            (p.sku && p.sku.toLowerCase().includes(slug.toLowerCase())) ||
-            (p.slug && p.slug.toLowerCase() === slug.toLowerCase()) ||
-            (p.nama_produk && p.nama_produk.toLowerCase().replace(/\s+/g, "-") === slug.toLowerCase())
-        );
+        const found = await productService.getProductBySlugOrId(slug);
         if (found) {
-          setProduct(found);
+          const mapped: Product = {
+            id_produk: found.id_produk,
+            id_seller: found.id_seller,
+            nama_produk: found.nama_produk,
+            sku: found.sku || "",
+            category: found.category || "UMKM",
+            categorySlug: found.categorySlug,
+            slug: found.slug,
+            harga: found.harga,
+            stok: found.stok ?? found.produk_stock ?? 0,
+            status: found.status || "Aktif",
+            img: found.img,
+            images: found.images,
+            desc: found.desc || "",
+            created_at: found.created_at || "",
+            berat: found.berat,
+            bahan: found.bahan,
+            asal_produk: found.asal_produk,
+            ketahanan: found.ketahanan,
+            info_tambahan: found.info_tambahan,
+            variants: found.variants,
+          };
+          setProduct(mapped);
           setActiveImg(0);
-          const initialSelections: { [key: number]: number } = {};
-          found.variants?.forEach((_, idx) => {
-            initialSelections[idx] = 0;
-          });
-          setActiveVariants(initialSelections);
+
+          const rawSeller = Array.isArray(found.seller) ? found.seller[0] : found.seller;
+          if (rawSeller) setSeller(rawSeller as Seller);
+          else setSeller(null);
+
+          const [reviewList, similar] = await Promise.all([
+            productService.getProductReviews(found.id_produk),
+            productService.getSimilarProducts(
+              found.id_produk,
+              found.categorySlug,
+              found.id_seller,
+              5
+            ),
+          ]);
+          setReviews(reviewList);
+          const stats = await productService.getProductStats([
+            found.id_produk,
+            ...similar.map((p) => p.id_produk),
+          ]);
+          setSoldCount(stats[found.id_produk]?.sold ?? 0);
+          setSimilarProducts(similar.map((p) => productToCard(p, stats[p.id_produk])));
+
+          const user = authService.getCurrentUser();
+          const isPlaceholder =
+            !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+            process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder");
+          if (user && !isPlaceholder) {
+            const { data: orderItems } = await supabase
+              .from("order_item")
+              .select(`id_order, order!inner ( id_order, id_user, stat_order )`)
+              .eq("id_produk", found.id_produk)
+              .eq("order.id_user", user.id_user)
+              .eq("order.stat_order", "selesai");
+
+            const selesaiOrder = orderItems?.[0]?.order;
+            const orderId = Array.isArray(selesaiOrder)
+              ? selesaiOrder[0]?.id_order
+              : (selesaiOrder as { id_order?: string } | null)?.id_order;
+
+            if (orderId) {
+              const reviewed = await returnService.getReviewedProductIds(user.id_user, [found.id_produk]);
+              const already = reviewed.includes(found.id_produk);
+              setHasReviewed(already);
+              setCanReview(!already);
+              setReviewOrderId(orderId);
+            }
+          }
         }
       } catch (err) {
         console.error("Error loading product:", err);
@@ -110,43 +264,82 @@ export default function ProductDetailPage() {
     loadProduct();
   }, [slug]);
 
-  // Review & Delivery state variables
-  const [reviews, setReviews] = useState([
-    {
-      id: 1,
-      name: "Budi Nugraha",
-      avatar: "BN",
-      time: "2 hari yang lalu",
-      rating: 5,
-      text: "Barangnya sangat bagus, packing sangat aman dengan bubble wrap tebal. Motif batiknya rapi dan warnanya persis seperti di foto. Sangat direkomendasikan!",
-      image: null as string | null
+  useEffect(() => {
+    if (product?.variants?.length) {
+      const initial: Record<number, number> = {};
+      product.variants.forEach((_, i) => {
+        initial[i] = 0;
+      });
+      setActiveVariants(initial);
     }
-  ]);
-  const [deliveryStatus, setDeliveryStatus] = useState<"dikirim" | "sampai">("dikirim");
-  const [newRating, setNewRating] = useState(5);
-  const [hoverRating, setHoverRating] = useState<number | null>(null);
-  const [newReviewText, setNewReviewText] = useState("");
-  const [reviewFileName, setReviewFileName] = useState("");
-  const [reviewUploadProgress, setReviewUploadProgress] = useState<number | null>(null);
-  const [reviewImgUrl, setReviewImgUrl] = useState<string | null>(null);
+  }, [product?.id_produk, product?.variants]);
 
-  const handleAddReview = (e: React.FormEvent) => {
+  const handleAddToCart = async (redirectToCheckout = false) => {
+    if (!product) return;
+    const user = authService.getCurrentUser();
+    if (!user) {
+      router.push(`/masuk?redirect=/produk/${slug}`);
+      return;
+    }
+    setAddingCart(true);
+    const result = await cartService.addToCart(user.id_user, product.id_produk, qty, {
+      setQty: redirectToCheckout,
+    });
+    if (!result.ok) {
+      setAddingCart(false);
+      alert(result.error || "Gagal menambahkan ke keranjang.");
+      return;
+    }
+    if (redirectToCheckout) {
+      const cartItemId =
+        result.cartItemId ||
+        (await cartService.getCartItems(user.id_user)).find((i) => i.id_produk === product.id_produk)
+          ?.id_cart_item;
+      if (!cartItemId) {
+        setAddingCart(false);
+        alert("Gagal menyiapkan checkout. Coba lagi dari keranjang.");
+        return;
+      }
+      orderService.saveCheckoutSession([cartItemId]);
+      router.push("/checkout");
+    } else {
+      alert("Produk ditambahkan ke keranjang!");
+    }
+    setAddingCart(false);
+  };
+
+  const handleAddReview = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newReviewText.trim()) return;
+    if (!newReviewText.trim() || !product) return;
 
-    const newReview = {
-      id: Date.now(),
-      name: "Siti Rahayu",
-      avatar: "SR",
-      time: "Baru saja",
-      rating: newRating,
-      text: newReviewText,
-      image: reviewImgUrl
-    };
+    const user = authService.getCurrentUser();
+    if (!user) {
+      router.push(`/masuk?redirect=/produk/${slug}`);
+      return;
+    }
+    if (!reviewOrderId) {
+      alert("Ulasan hanya bisa diberikan setelah pesanan selesai. Buka Pesanan Saya → tab Selesai.");
+      return;
+    }
 
-    setReviews([newReview, ...reviews]);
-    
-    // Reset form
+    try {
+      await returnService.submitReview({
+        userId: user.id_user,
+        orderId: reviewOrderId,
+        productId: product.id_produk,
+        rating: newRating,
+        comment: newReviewText,
+        photoReview: reviewImgUrl || undefined,
+      });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Gagal menyimpan ulasan.");
+      return;
+    }
+
+    const updated = await productService.getProductReviews(product.id_produk);
+    setReviews(updated);
+    setCanReview(false);
+    setHasReviewed(true);
     setNewReviewText("");
     setNewRating(5);
     setReviewFileName("");
@@ -154,9 +347,13 @@ export default function ProductDetailPage() {
     setReviewImgUrl(null);
   };
 
-  const totalReviews = 124 + (reviews.length - INITIAL_REVIEWS.length);
-  const totalRatingSum = 124 * 4.8 + reviews.reduce((sum, r) => sum + r.rating, 0) - INITIAL_REVIEWS.reduce((sum, r) => sum + r.rating, 0);
-  const averageRating = (totalRatingSum / totalReviews).toFixed(1);
+  const totalReviews = reviews.length;
+  const averageRating =
+    totalReviews > 0
+      ? (reviews.reduce((sum, r) => sum + r.rating, 0) / totalReviews).toFixed(1)
+      : "0";
+
+  const productInfo = product ? buildProductInfoDisplay(product) : null;
 
   if (loading) {
     return (
@@ -325,52 +522,86 @@ export default function ProductDetailPage() {
                 </div>
                 <span style={{ fontSize: "0.8125rem", color: "#5C5550", fontWeight: 600 }}>{averageRating} | {totalReviews} Ulasan</span>
                 <span style={{ fontSize: "0.8125rem", color: "#8E8680" }}>·</span>
-                <span style={{ fontSize: "0.8125rem", color: "#8E8680" }}>Terjual {product ? "10+" : "380+"}</span>
+                <span style={{ fontSize: "0.8125rem", color: "#8E8680" }}>
+                  Stok: {product ? product.stok : 0}
+                </span>
+                <span style={{ fontSize: "0.8125rem", color: "#8E8680" }}>·</span>
+                <span style={{ fontSize: "0.8125rem", color: "#8E8680" }}>
+                  Terjual {soldCount}
+                </span>
               </div>
 
               {/* Price */}
               <div style={{ fontSize: "1.875rem", fontWeight: 800, color: "#1D4ED8", letterSpacing: "-0.02em" }}>
-                Rp {product ? product.harga.toLocaleString("id-ID") : "125.000"}
+                {product?.variants?.some((g) => g.options.some((o) => o.price)) &&
+                Object.keys(activeVariants).length > 0 &&
+                getSelectedVariantPrice(product, activeVariants) !== product.harga
+                  ? formatPrice(getSelectedVariantPrice(product, activeVariants))
+                  : product
+                    ? getVariantPriceRange(product)
+                    : "Rp 125.000"}
               </div>
+
+              {product?.variants && product.variants.length > 0 && getSelectedVariantLabel(product, activeVariants) && (
+                <p style={{ fontSize: "0.75rem", color: "#8E8680", margin: "-8px 0 0 0" }}>
+                  Pilihan: <span style={{ color: "#1F1B18", fontWeight: 600 }}>{getSelectedVariantLabel(product, activeVariants)}</span>
+                </p>
+              )}
 
               {/* Divider */}
               <div style={{ height: 1, background: "#EAE5E0" }} />
 
-              {/* Dynamic or Static Variants */}
-              {product ? (
-                product.variants && product.variants.map((v, vIdx) => (
+              {/* Varian ala marketplace */}
+              {product?.variants && product.variants.length > 0 ? (
+                product.variants.map((v, vIdx) => (
                   <div key={vIdx} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     <p style={{ fontSize: "0.8125rem", fontWeight: 700, color: "#5C5550", margin: 0 }}>{v.label}</p>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      {v.values.map((val, valIdx) => {
-                        const isSelected = activeVariants[vIdx] === valIdx;
+                      {v.options.map((opt, optIdx) => {
+                        const isSelected = (activeVariants[vIdx] ?? 0) === optIdx;
                         return (
                           <button
-                            key={valIdx}
+                            key={optIdx}
                             type="button"
-                            onClick={() => setActiveVariants(prev => ({ ...prev, [vIdx]: valIdx }))}
+                            onClick={() => setActiveVariants((prev) => ({ ...prev, [vIdx]: optIdx }))}
                             style={{
-                              height: 34,
-                              padding: "0 16px",
-                              borderRadius: 6,
-                              border: isSelected ? "1.5px solid #1D4ED8" : "1.5px solid #D5CFC9",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                              minHeight: 40,
+                              padding: opt.image ? "4px 12px 4px 4px" : "0 14px",
+                              borderRadius: 4,
+                              border: isSelected ? "1.5px solid #1D4ED8" : "1px solid #D5CFC9",
                               fontSize: "0.8125rem",
                               fontWeight: 600,
-                              color: isSelected ? "#1D4ED8" : "#5C5550",
-                              background: isSelected ? "#EFF6FF" : "white",
+                              color: isSelected ? "#1D4ED8" : "#1F1B18",
+                              background: isSelected ? "#FFF7ED" : "white",
                               cursor: "pointer",
                               transition: "all 0.15s",
                               fontFamily: "inherit",
                             }}
                           >
-                            {val}
+                            {opt.image ? (
+                              <img
+                                src={opt.image}
+                                alt={opt.name}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  objectFit: "cover",
+                                  borderRadius: 2,
+                                  flexShrink: 0,
+                                }}
+                              />
+                            ) : null}
+                            <span>{opt.name}</span>
                           </button>
                         );
                       })}
                     </div>
                   </div>
                 ))
-              ) : (
+              ) : !product ? (
                 <>
                   {/* Color Picker */}
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -423,17 +654,56 @@ export default function ProductDetailPage() {
                     </div>
                   </div>
                 </>
-              )}
+              ) : null}
 
-              {/* Description */}
-              <p style={{ fontSize: "0.875rem", color: "#5C5550", lineHeight: 1.7, margin: 0 }}>
-                {product ? product.desc : "Mangkuk keramik eksklusif yang dibuat oleh perajin lokal dengan teknik pembakaran suhu tinggi untuk daya tahan maksimal. Dihiasi dengan motif batik klasik yang dilukis tangan menggunakan bahan pewarna alami yang aman untuk makanan (Food Grade). Cocok sebagai pelengkap meja makan mewah atau hadiah spesial."}
-              </p>
+              {/* Jumlah */}
+              {product && (
+                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                  <span style={{ fontSize: "0.8125rem", fontWeight: 700, color: "#5C5550" }}>Jumlah</span>
+                  <div style={{ display: "flex", alignItems: "center", border: "1px solid #D5CFC9", borderRadius: 4, overflow: "hidden" }}>
+                    <button
+                      type="button"
+                      onClick={() => setQty((q) => Math.max(1, q - 1))}
+                      style={{
+                        width: 32,
+                        height: 32,
+                        border: "none",
+                        background: "#F5F3F0",
+                        cursor: "pointer",
+                        fontSize: "1rem",
+                        color: "#5C5550",
+                      }}
+                    >
+                      −
+                    </button>
+                    <span style={{ width: 40, textAlign: "center", fontSize: "0.875rem", fontWeight: 700 }}>{qty}</span>
+                    <button
+                      type="button"
+                      onClick={() => setQty((q) => Math.min(product.stok || 99, q + 1))}
+                      style={{
+                        width: 32,
+                        height: 32,
+                        border: "none",
+                        background: "#F5F3F0",
+                        cursor: "pointer",
+                        fontSize: "1rem",
+                        color: "#5C5550",
+                      }}
+                    >
+                      +
+                    </button>
+                  </div>
+                  <span style={{ fontSize: "0.75rem", color: product.stok > 0 ? "#16A34A" : "#DC2626", fontWeight: 600 }}>
+                    {product.stok > 0 ? `Stok tersedia: ${product.stok} unit` : "Stok habis"}
+                  </span>
+                </div>
+              )}
 
               {/* CTA Buttons */}
               <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
-                <Link
-                  href="/chat"
+                <button
+                  type="button"
+                  onClick={openCustomerService}
                   style={{
                     width: 48,
                     height: 48,
@@ -450,9 +720,11 @@ export default function ProductDetailPage() {
                   title="Customer Service"
                 >
                   <MessageSquare size={20} />
-                </Link>
+                </button>
                 <button
                   id="add-to-cart"
+                  onClick={() => handleAddToCart(false)}
+                  disabled={addingCart}
                   style={{
                     flex: 1,
                     height: 48,
@@ -471,11 +743,12 @@ export default function ProductDetailPage() {
                   }}
                 >
                   <ShoppingCart size={18} />
-                  Tambah ke Keranjang
+                  {addingCart ? "Menambahkan..." : "Tambah ke Keranjang"}
                 </button>
-                <Link
+                <button
                   id="buy-now"
-                  href="/checkout"
+                  onClick={() => handleAddToCart(true)}
+                  disabled={addingCart}
                   style={{
                     flex: 1,
                     height: 48,
@@ -484,17 +757,16 @@ export default function ProductDetailPage() {
                     borderRadius: 8,
                     fontSize: "0.9rem",
                     fontWeight: 700,
-                    cursor: "pointer",
+                    cursor: addingCart ? "not-allowed" : "pointer",
                     border: "none",
                     fontFamily: "inherit",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    textDecoration: "none",
                   }}
                 >
                   Beli Sekarang
-                </Link>
+                </button>
               </div>
             </div>
           </div>
@@ -511,60 +783,38 @@ export default function ProductDetailPage() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "120px 1fr 140px 1fr", gap: 8, fontSize: "0.8125rem" }}>
                     <span style={{ color: "#8E8680", fontWeight: 600 }}>Bahan</span>
-                    <span style={{ color: "#1F1B18", fontWeight: 600 }}>Keramik Porselen</span>
+                    <span style={{ color: "#1F1B18", fontWeight: 600 }}>{productInfo?.bahan ?? "—"}</span>
                     <span style={{ color: "#8E8680", fontWeight: 600 }}>Asal Produk</span>
-                    <span style={{ color: "#1F1B18", fontWeight: 600 }}>Kasongan, Yogyakarta</span>
+                    <span style={{ color: "#1F1B18", fontWeight: 600 }}>{productInfo?.asal ?? "—"}</span>
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "120px 1fr 140px 1fr", gap: 8, fontSize: "0.8125rem" }}>
                     <span style={{ color: "#8E8680", fontWeight: 600 }}>Berat</span>
-                    <span style={{ color: "#1F1B18", fontWeight: 600 }}>450 gram</span>
+                    <span style={{ color: "#1F1B18", fontWeight: 600 }}>{productInfo?.berat ?? "—"}</span>
                     <span style={{ color: "#8E8680", fontWeight: 600 }}>Ketahanan</span>
-                    <span style={{ color: "#1F1B18", fontWeight: 600 }}>Microwave &amp; Dishwasher Safe</span>
+                    <span style={{ color: "#1F1B18", fontWeight: 600 }}>{productInfo?.ketahanan ?? "—"}</span>
                   </div>
                 </div>
-                <p style={{ fontSize: "0.8125rem", color: "#5C5550", lineHeight: 1.65, paddingTop: 12, borderTop: "1px solid #EAE5E0", margin: 0 }}>
-                  Setiap produk unik karena dikerjakan secara manual oleh tangan terampil perajin UMKM kami. Dengan membeli produk ini, Anda turut berkontribusi dalam melestarikan budaya batik dan mendukung ekonomi kreatif lokal Indonesia.
-                </p>
+                <div style={{ paddingTop: 12, borderTop: "1px solid #EAE5E0" }}>
+                  <p style={{ fontSize: "0.75rem", fontWeight: 800, color: "#8E8680", textTransform: "uppercase", letterSpacing: "0.04em", margin: "0 0 8px" }}>
+                    Deskripsi
+                  </p>
+                  <p style={{ fontSize: "0.8125rem", color: "#5C5550", lineHeight: 1.65, margin: 0, whiteSpace: "pre-line" }}>
+                    {productInfo?.deskripsi ?? "—"}
+                  </p>
+                </div>
               </div>
 
-              {/* Delivery Status and Review Form */}
+              {/* Review Form — hanya jika pesanan selesai & belum diulas */}
               <div style={{ background: "white", border: "1px solid #EAE5E0", borderRadius: 12, padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <h3 style={{ fontSize: "0.9375rem", fontWeight: 800, color: "#1F1B18", margin: 0 }}>Status Pengiriman Pesanan</h3>
-                  {/* Status Toggle Button */}
-                  <button 
-                    onClick={() => setDeliveryStatus(prev => prev === "dikirim" ? "sampai" : "dikirim")}
-                    style={{
-                      padding: "6px 14px",
-                      background: deliveryStatus === "sampai" ? "#EBFDF2" : "#FFF7ED",
-                      border: deliveryStatus === "sampai" ? "1px solid #BBF7D0" : "1px solid #FED7AA",
-                      borderRadius: 20,
-                      color: deliveryStatus === "sampai" ? "#15803D" : "#EA580C",
-                      fontSize: "0.75rem",
-                      fontWeight: 800,
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      fontFamily: "inherit"
-                    }}
-                  >
-                    <span style={{ fontSize: "0.6rem" }}>●</span>
-                    <span>{deliveryStatus === "sampai" ? "Barang Sudah Sampai" : "Barang Sedang Dikirim"}</span>
-                    <span style={{ fontSize: "0.75rem", fontWeight: 800, color: "#8E8680", marginLeft: 4 }}>[Ubah]</span>
-                  </button>
-                </div>
+                <h3 style={{ fontSize: "0.9375rem", fontWeight: 800, color: "#1F1B18", margin: 0 }}>Ulasan Produk</h3>
 
-                {deliveryStatus === "dikirim" ? (
-                  /* IN SHIPPING MESSAGE */
-                  <div style={{ padding: "16px 20px", background: "#F5F3F0", borderRadius: 8, border: "1px solid #EAE5E0", display: "flex", alignItems: "center", gap: 10 }}>
-                    <span className="material-symbols-outlined" style={{ color: "#EA580C", fontSize: "20px" }}>local_shipping</span>
-                    <p style={{ fontSize: "0.75rem", color: "#5C5550", margin: 0, fontWeight: 600 }}>
-                      Pesanan Anda sedang dalam perjalanan. Anda dapat memberikan ulasan setelah paket sampai.
+                {hasReviewed ? (
+                  <div style={{ padding: "16px 20px", background: "#EBFDF2", borderRadius: 8, border: "1px solid #BBF7D0" }}>
+                    <p style={{ fontSize: "0.75rem", color: "#15803D", margin: 0, fontWeight: 600 }}>
+                      ✓ Anda sudah memberikan ulasan untuk produk ini. Terima kasih!
                     </p>
                   </div>
-                ) : (
-                  /* WRITE REVIEW FORM */
+                ) : canReview ? (
                   <form onSubmit={handleAddReview} style={{ display: "flex", flexDirection: "column", gap: 14, borderTop: "1.5px solid #F5F3F0", paddingTop: 16 }}>
                     <h4 style={{ fontSize: "0.875rem", fontWeight: 800, color: "#1F1B18", margin: 0 }}>Beri Ulasan Produk</h4>
                     
@@ -698,6 +948,14 @@ export default function ProductDetailPage() {
                       <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>send</span>
                     </button>
                   </form>
+                ) : (
+                  <div style={{ padding: "16px 20px", background: "#F5F3F0", borderRadius: 8, border: "1px solid #EAE5E0" }}>
+                    <p style={{ fontSize: "0.75rem", color: "#5C5550", margin: 0, fontWeight: 600 }}>
+                      Beli dan selesaikan pesanan untuk memberikan ulasan. Buka{" "}
+                      <Link href="/account/orders" style={{ color: "#1D4ED8", fontWeight: 700 }}>Pesanan Saya</Link>{" "}
+                      → tab Selesai.
+                    </p>
+                  </div>
                 )}
               </div>
 
@@ -745,44 +1003,40 @@ export default function ProductDetailPage() {
               {/* Seller Card */}
               <div style={{ background: "white", border: "1px solid #EAE5E0", borderRadius: 12, padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{
-                    width: 44, height: 44, borderRadius: 10,
-                    background: "linear-gradient(135deg, #92400E, #78350F)",
-                    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                  }}>
-                    <Store size={20} color="white" />
-                  </div>
+                  {seller?.logo_toko ? (
+                    <div style={{ width: 44, height: 44, borderRadius: 10, overflow: "hidden", flexShrink: 0, border: "1px solid #EAE5E0" }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={seller.logo_toko} alt={seller.nm_store} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    </div>
+                  ) : (
+                    <div style={{
+                      width: 44, height: 44, borderRadius: 10,
+                      background: "linear-gradient(135deg, #92400E, #78350F)",
+                      display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                    }}>
+                      <Store size={20} color="white" />
+                    </div>
+                  )}
                   <div style={{ flex: 1 }}>
-                    <p style={{ fontSize: "0.875rem", fontWeight: 800, color: "#1F1B18", margin: 0 }}>Griya Keramik Kasongan</p>
-                    <p style={{ fontSize: "0.75rem", color: "#8E8680", marginTop: 2, margin: "2px 0 0 0" }}>Aktif 5 menit yang lalu</p>
+                    <p style={{ fontSize: "0.875rem", fontWeight: 800, color: "#1F1B18", margin: 0 }}>
+                      {seller?.nm_store || "Toko UMKM"}
+                    </p>
+                    <p style={{ fontSize: "0.75rem", color: "#8E8680", marginTop: 2, margin: "2px 0 0 0" }}>
+                      {seller?.addr
+                        ? seller.addr.split(",").slice(0, 2).join(",").trim()
+                        : "Pelataran UMKM Indonesia"}
+                    </p>
                   </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.75rem", fontWeight: 700, color: "#1D4ED8" }}>
-                  <ShieldCheck size={14} color="#1D4ED8" />
-                  <span>Pelapak Terverifikasi</span>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                {seller?.is_verified !== false && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.75rem", fontWeight: 700, color: "#1D4ED8" }}>
+                    <ShieldCheck size={14} color="#1D4ED8" />
+                    <span>Pelapak Terverifikasi</span>
+                  </div>
+                )}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10 }}>
                   <Link
-                    href="/chat"
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 6,
-                      height: 38,
-                      border: "1.5px solid #1D4ED8",
-                      borderRadius: 6,
-                      fontSize: "0.8125rem",
-                      fontWeight: 700,
-                      color: "#1D4ED8",
-                      textDecoration: "none",
-                    }}
-                  >
-                    <MessageSquare size={14} />
-                    Chat
-                  </Link>
-                  <Link
-                    href="/toko/griya-keramik"
+                    href={seller?.nm_store ? `/toko/${storeNameToSlug(seller.nm_store)}` : "#"}
                     style={{
                       display: "flex",
                       alignItems: "center",
@@ -794,6 +1048,8 @@ export default function ProductDetailPage() {
                       fontWeight: 700,
                       color: "#1F1B18",
                       textDecoration: "none",
+                      pointerEvents: seller?.nm_store ? "auto" : "none",
+                      opacity: seller?.nm_store ? 1 : 0.5,
                     }}
                   >
                     Kunjungi Toko
@@ -801,26 +1057,21 @@ export default function ProductDetailPage() {
                 </div>
               </div>
 
-              {/* Promo Card */}
+              {/* Tentang Toko */}
               <div style={{ background: "white", border: "1px solid #EAE5E0", borderRadius: 12, padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.875rem", fontWeight: 800, color: "#1F1B18" }}>
                   <Tag size={14} color="#1D4ED8" />
-                  <span>Promo Hari Ini</span>
+                  <span>Tentang Toko</span>
                 </div>
                 <p style={{ fontSize: "0.8125rem", color: "#5C5550", lineHeight: 1.6, margin: 0 }}>
-                  Gunakan kode <strong style={{ color: "#1D4ED8" }}>LOKALBANGGA</strong> untuk diskon 10% khusus produk kerajinan tangan.
+                  {seller?.deskripsi?.trim()
+                    || "Toko mitra UMKM di Pelataran UMKM — produk asli buatan pengrajin dan pelaku usaha lokal Indonesia."}
                 </p>
-                <button style={{
-                  height: 38,
-                  background: "#1D4ED8",
-                  color: "white",
-                  borderRadius: 6,
-                  fontSize: "0.8125rem",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  border: "none",
-                  fontFamily: "inherit",
-                }}>Klaim Voucher</button>
+                {seller?.no_telp && (
+                  <p style={{ fontSize: "0.75rem", color: "#8E8680", margin: 0 }}>
+                    Kontak: {seller.no_telp}
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -829,10 +1080,12 @@ export default function ProductDetailPage() {
           <div style={{ marginTop: 8 }}>
             <h2 style={{ fontSize: "1.05rem", fontWeight: 800, color: "#1F1B18", marginBottom: 20 }}>Produk Serupa</h2>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 16 }}>
-              {SIMILAR_PRODUCTS.map((p) => (
+              {similarProducts.length === 0 ? (
+                <p style={{ fontSize: "0.875rem", color: "#8E8680", gridColumn: "1 / -1" }}>Belum ada produk serupa.</p>
+              ) : similarProducts.map((p) => (
                 <Link
                   key={p.id}
-                  href={`/produk/similar-${p.id}`}
+                  href={`/produk/${p.slug}`}
                   style={{
                     background: "white",
                     border: "1px solid #EAE5E0",

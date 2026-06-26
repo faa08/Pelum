@@ -3,13 +3,10 @@
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   MapPin,
-  ChevronDown,
-  Check,
   Tag,
-  ShoppingBag,
-  CreditCard,
   Phone,
   User,
   ArrowRight,
@@ -18,60 +15,47 @@ import {
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import { authService } from "@/backend/authService";
+import { cartService } from "@/backend/cartService";
+import { orderService, CheckoutOrderResult, PaymentMethodId } from "@/backend/orderService";
+import { supabase } from "@/backend/supabase";
+import {
+  CHECKOUT_PAYMENT_OPTIONS,
+  PICKUP_CONFIRM_SECONDS,
+  PICKUP_STORE_ADDRESS,
+} from "@/lib/checkoutConstants";
 
-// Mock products in the order
-const ORDER_ITEMS = [
-  {
-    id: 1,
-    name: "Tas Rotan Artisan 'Lestari'",
-    quantity: 1,
-    weight: 800, // gr
-    price: 350000,
-    image: "/product-dompet.png", // using available rotan/leather product image
-  },
-  {
-    id: 2,
-    name: "Paket Cokelat Artisan",
-    quantity: 2,
-    weight: 400, // gr
-    price: 120000,
-    image: "/product-kopi.png", // using available foodie product image
-  },
-];
+interface CheckoutItem {
+  id_cart_item: string;
+  id_produk: string;
+  name: string;
+  quantity: number;
+  weight: number;
+  price: number;
+  image: string;
+}
 
-// Shipping methods list
-const SHIPPING_METHODS = [
-  { id: "jne-reg", name: "JNE Regular (Rp 18.000) - Estimasi 2-3 hari", cost: 18000 },
-  { id: "jnt-reg", name: "J&T Express (Rp 15.000) - Estimasi 2-4 hari", cost: 15000 },
-  { id: "sicepat-gokil", name: "Sicepat Gokil (Rp 12.000) - Estimasi 3-5 hari", cost: 12000 },
-  { id: "gosend-instant", name: "GoSend Instant (Rp 25.000) - Estimasi 3 jam", cost: 25000 },
-];
+function parseProductImg(img?: string | null): string {
+  if (!img) return "/product-keramik.png";
+  if (img.startsWith("[")) {
+    try {
+      const arr = JSON.parse(img);
+      return arr[0] || "/product-keramik.png";
+    } catch {
+      return "/product-keramik.png";
+    }
+  }
+  return img;
+}
 
-// Payment methods list
-const PAYMENT_METHODS = [
-  {
-    id: "bca",
-    name: "BCA Virtual Account",
-    desc: "Otomatis Terverifikasi",
-  },
-  {
-    id: "gopay",
-    name: "GoPay",
-    desc: "Saldo atau PayLater",
-  },
-  {
-    id: "shopeepay",
-    name: "ShopeePay",
-    desc: "Konfirmasi di Aplikasi",
-  },
-  {
-    id: "cc",
-    name: "Kartu Kredit",
-    desc: "Visa / Mastercard / JCB",
-  },
-];
+const isPlaceholder = () =>
+  !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder");
 
 export default function CheckoutPage() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [addressId, setAddressId] = useState<string | null>(null);
   // Address State
   const [address, setAddress] = useState({
     name: "Budi Santoso (Utama)",
@@ -82,11 +66,15 @@ export default function CheckoutPage() {
   const [tempAddress, setTempAddress] = useState({ ...address });
 
   // Order Items State
-  const [items, setItems] = useState(ORDER_ITEMS);
+  const [items, setItems] = useState<CheckoutItem[]>([]);
+  const [placedOrders, setPlacedOrders] = useState<CheckoutOrderResult[]>([]);
+  const [transactionRef, setTransactionRef] = useState("");
 
-  // Shipping & Payment State
-  const [selectedShipping, setSelectedShipping] = useState(SHIPPING_METHODS[0]);
-  const [selectedPayment, setSelectedPayment] = useState(PAYMENT_METHODS[0].id);
+  // Payment State
+  const [selectedPaymentType, setSelectedPaymentType] = useState<PaymentMethodId>("digital");
+  const [showPickupModal, setShowPickupModal] = useState(false);
+  const [pickupCountdown, setPickupCountdown] = useState(PICKUP_CONFIRM_SECONDS);
+  const [pickupCanConfirm, setPickupCanConfirm] = useState(false);
 
   // Voucher State
   const [voucherCode, setVoucherCode] = useState("");
@@ -95,62 +83,110 @@ export default function CheckoutPage() {
 
   // checkout status
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isPaying, setIsPaying] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  const [showVAScreen, setShowVAScreen] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(86400); // 24 hours
-  const [copiedVa, setCopiedVa] = useState(false);
-  const [copiedBill, setCopiedBill] = useState(false);
+  const [successMode, setSuccessMode] = useState<"digital" | "offline">("digital");
 
   useEffect(() => {
-    if (!showVAScreen) return;
+    async function loadCheckout() {
+      const user = authService.getCurrentUser();
+      if (!user) {
+        router.replace("/masuk?redirect=/checkout");
+        return;
+      }
+
+      const cartIds = orderService.getCheckoutCartIds();
+      if (!cartIds.length) {
+        router.replace("/keranjang");
+        return;
+      }
+
+      const dbItems = await cartService.getCartItems(user.id_user);
+      const filtered = dbItems.filter((i) => cartIds.includes(i.id_cart_item) && i.produk);
+      if (!filtered.length) {
+        router.replace("/keranjang");
+        return;
+      }
+
+      setItems(
+        filtered.map((i) => ({
+          id_cart_item: i.id_cart_item,
+          id_produk: i.id_produk,
+          name: i.produk!.nama_produk,
+          quantity: i.qty_cartitem,
+          weight: i.produk!.berat || 500,
+          price: i.produk!.harga,
+          image: parseProductImg(i.produk!.img),
+        }))
+      );
+
+      if (!isPlaceholder()) {
+        const { data: addresses } = await supabase
+          .from("alamat")
+          .select("*")
+          .eq("id_user", user.id_user)
+          .order("is_utama", { ascending: false });
+
+        if (addresses?.length) {
+          const primary = addresses.find((a) => a.is_utama) || addresses[0];
+          setAddressId(primary.id_alamat);
+          const details = `${primary.detail_alamat}, ${primary.kecamatan}, ${primary.kota}, ${primary.provinsi}${primary.kode_pos ? ` ${primary.kode_pos}` : ""}`;
+          const addr = {
+            name: `${primary.nama_penerima}${primary.is_utama ? " (Utama)" : ""}`,
+            phone: primary.no_telp,
+            details,
+          };
+          setAddress(addr);
+          setTempAddress(addr);
+        }
+      }
+
+      const vRaw = sessionStorage.getItem("pelum_checkout_voucher");
+      if (vRaw) {
+        try {
+          const v = JSON.parse(vRaw);
+          if (v.code) setAppliedVoucher({ code: v.code });
+        } catch { /* ignore */ }
+      }
+
+      setLoading(false);
+    }
+    loadCheckout();
+  }, [router]);
+
+  useEffect(() => {
+    if (!showPickupModal) return;
+    setPickupCountdown(PICKUP_CONFIRM_SECONDS);
+    setPickupCanConfirm(false);
     const interval = setInterval(() => {
-      setTimeLeft((prev) => (prev > 0 ? prev - 1 : 0));
+      setPickupCountdown((prev) => {
+        if (prev <= 1) {
+          setPickupCanConfirm(true);
+          return 0;
+        }
+        return prev - 1;
+      });
     }, 1000);
     return () => clearInterval(interval);
-  }, [showVAScreen]);
+  }, [showPickupModal]);
 
-  const formatTime = (seconds: number) => {
-    const h = Math.floor(seconds / 3600).toString().padStart(2, "0");
-    const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, "0");
-    const s = (seconds % 60).toString().padStart(2, "0");
-    return `${h}:${m}:${s}`;
-  };
-
-  const handleCopyVa = (vaText: string = "8837081234567890") => {
-    navigator.clipboard.writeText(vaText);
-    setCopiedVa(true);
-    setTimeout(() => setCopiedVa(false), 2000);
-  };
-
-  const handleCopyBill = () => {
-    navigator.clipboard.writeText(totalBill.toString());
-    setCopiedBill(true);
-    setTimeout(() => setCopiedBill(false), 2000);
-  };
-
-  // Quantity control handler
-  const updateQty = (id: number, delta: number) => {
-    setItems((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, quantity: Math.max(1, item.quantity + delta) } : item
-      )
-    );
-  };
-
-  // Calculate totals
+  const isOffline = selectedPaymentType === "offline";
   const totalItemPrice = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const totalWeight = items.reduce((sum, item) => sum + item.weight * item.quantity, 0) / 1000; // in kg
-
-  const shippingCost = Math.max(1, Math.ceil(totalWeight)) * selectedShipping.cost;
+  const shippingCost = 0;
   const serviceFee = 2000;
-  const totalDiscount = appliedVoucher ? (appliedVoucher.code === "DISKONUMKM" ? Math.min(50000, totalItemPrice * 0.1) : 50000) : 0;
+  const totalDiscount =
+    appliedVoucher
+      ? appliedVoucher.code === "LOKALBANGGA"
+        ? Math.floor(totalItemPrice * 0.1)
+        : appliedVoucher.code === "DISKONUMKM"
+          ? Math.min(50000, totalItemPrice * 0.1)
+          : 50000
+      : 0;
   const totalBill = totalItemPrice + shippingCost + serviceFee - totalDiscount;
 
   const handleApplyVoucher = (e: React.FormEvent) => {
     e.preventDefault();
     const code = voucherCode.trim().toUpperCase();
-    if (code === "DISKONUMKM" || code === "HEMAT50") {
+    if (code === "DISKONUMKM" || code === "HEMAT50" || code === "LOKALBANGGA") {
       setAppliedVoucher({ code });
       setVoucherError("");
     } else {
@@ -159,20 +195,163 @@ export default function CheckoutPage() {
     }
   };
 
-  const handlePayNow = () => {
-    setIsProcessing(true);
-    setTimeout(() => {
-      setIsProcessing(false);
-      setIsPaying(true);
-      setTimeLeft(900);
-    }, 1500);
+  const updateQty = async (id: string, delta: number) => {
+    const item = items.find((i) => i.id_cart_item === id);
+    if (!item) return;
+    const newQty = Math.max(1, item.quantity + delta);
+    setItems((prev) =>
+      prev.map((it) =>
+        it.id_cart_item === id ? { ...it, quantity: newQty } : it
+      )
+    );
+    await cartService.updateCartQuantity(id, newQty);
   };
 
-  const handleSaveAddress = (e: React.FormEvent) => {
+  const startDigitalPayment = async (orders: CheckoutOrderResult[], ref: string) => {
+    const user = authService.getCurrentUser();
+    if (!user) return;
+
+    const grossAmount = orders.reduce((s, o) => s + o.total_hrg, 0);
+    const snapRes = await fetch("/api/payment/midtrans-snap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        orderId: ref,
+        grossAmount,
+        customerDetails: {
+          name: user.nama_lengkap || user.username,
+          email: user.email,
+          phone: address.phone,
+        },
+      }),
+    });
+    const snap = await snapRes.json();
+    if (!snapRes.ok) {
+      throw new Error(snap.error || "Gagal membuat sesi pembayaran.");
+    }
+
+    if (snap.mode === "midtrans" && snap.redirectUrl) {
+      window.location.href = snap.redirectUrl;
+      return;
+    }
+
+    router.push(
+      `/checkout/payment?ref=${encodeURIComponent(ref)}&amount=${grossAmount}`
+    );
+  };
+
+  const handlePayNow = async () => {
+    const user = authService.getCurrentUser();
+    if (!user) {
+      router.replace("/masuk?redirect=/checkout");
+      return;
+    }
+
+    if (isOffline) {
+      setShowPickupModal(true);
+      return;
+    }
+
+    if (!addressId) {
+      alert("Tambahkan alamat pengiriman terlebih dahulu di menu Akun → Alamat.");
+      router.push("/account/address");
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      const result = await orderService.checkout({
+        userId: user.id_user,
+        cartItemIds: orderService.getCheckoutCartIds(),
+        addressId,
+        courier: "Dikonfirmasi Admin",
+        paymentType: "digital",
+        shippingCost,
+        diskon: totalDiscount,
+        biayaLayanan: serviceFee,
+      });
+      orderService.savePlacedOrders(result.orders, result.transactionRef);
+      setPlacedOrders(result.orders);
+      setTransactionRef(result.transactionRef);
+      await startDigitalPayment(result.orders, result.transactionRef);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Gagal membuat pesanan.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleConfirmPickup = async () => {
+    if (!pickupCanConfirm) return;
+    const user = authService.getCurrentUser();
+    if (!user) return;
+
+    setIsProcessing(true);
+    try {
+      const result = await orderService.checkout({
+        userId: user.id_user,
+        cartItemIds: orderService.getCheckoutCartIds(),
+        addressId: null,
+        courier: "Ambil di Toko",
+        paymentType: "offline",
+        shippingCost: 0,
+        diskon: totalDiscount,
+        biayaLayanan: serviceFee,
+      });
+      orderService.savePlacedOrders(result.orders, result.transactionRef);
+      setPlacedOrders(result.orders);
+      setTransactionRef(result.transactionRef);
+
+      await orderService.completePayment(
+        result.orders.map((o) => o.id_order),
+        true,
+        { paymentType: "offline" }
+      );
+
+      orderService.clearCheckoutSession();
+      sessionStorage.removeItem("pelum_checkout_voucher");
+      setShowPickupModal(false);
+      setSuccessMode("offline");
+      setIsSuccess(true);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Gagal membuat pesanan pickup.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleSaveAddress = async (e: React.FormEvent) => {
     e.preventDefault();
     setAddress({ ...tempAddress });
     setIsEditAddressOpen(false);
+
+    if (!addressId || isPlaceholder()) return;
+    const user = authService.getCurrentUser();
+    if (!user) return;
+
+    const parts = tempAddress.details.split(",").map((s) => s.trim());
+    await supabase
+      .from("alamat")
+      .update({
+        nama_penerima: tempAddress.name.replace(/\s*\(Utama\)\s*$/, ""),
+        no_telp: tempAddress.phone,
+        detail_alamat: parts[0] || tempAddress.details,
+      })
+      .eq("id_alamat", addressId)
+      .eq("id_user", user.id_user);
   };
+
+  if (loading) {
+    return (
+      <>
+        <Navbar />
+        <main style={{ background: "#FCFCFA", minHeight: "85vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Loader2 size={32} color="#1D4ED8" className="animate-spin" />
+        </main>
+        <Footer />
+      </>
+    );
+  }
 
   return (
     <>
@@ -180,165 +359,7 @@ export default function CheckoutPage() {
 
       <main style={{ background: "#FCFCFA", minHeight: "85vh", padding: "40px 0 60px" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 24px" }}>
-          
-          {isPaying ? (
-            /* ── PAYMENT INSTRUCTIONS GATEWAY SCREEN (Midtrans/Xendit Mockup Style) ── */
-            <div style={{
-              maxWidth: 600,
-              margin: "40px auto",
-              background: "white",
-              border: "1px solid #EAE5E0",
-              borderRadius: 16,
-              padding: "36px 32px",
-              boxShadow: "0 10px 30px rgba(31, 27, 24, 0.05)",
-              color: "#1F1B18",
-              fontFamily: "inherit"
-            }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "2px solid #F5F3F0", paddingBottom: 16, marginBottom: 24 }}>
-                <div>
-                  <span style={{ fontSize: "0.65rem", fontWeight: 800, color: "white", background: "#1D4ED8", padding: "4px 8px", borderRadius: 4, letterSpacing: "0.05em", textTransform: "uppercase" }}>
-                    Secure Payment Gateway
-                  </span>
-                  <h2 style={{ fontSize: "1.25rem", fontWeight: 800, margin: "6px 0 0" }}>Instruksi Pembayaran</h2>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <p style={{ fontSize: "0.75rem", color: "#8E8680", margin: 0 }}>Sisa Waktu Pembayaran</p>
-                  <p style={{ fontSize: "1.25rem", fontWeight: 900, color: "#DC2626", margin: 0, fontFamily: "monospace" }}>
-                    {formatTime(timeLeft)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Total Tagihan */}
-              <div style={{ background: "#EFF6FF", border: "1px solid #EFF6FF", borderRadius: 10, padding: 18, marginBottom: 24, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div>
-                  <p style={{ fontSize: "0.75rem", color: "#5C5550", margin: "0 0 4px" }}>Total Tagihan</p>
-                  <p style={{ fontSize: "1.5rem", fontWeight: 800, color: "#1D4ED8", margin: 0 }}>
-                    Rp {totalBill.toLocaleString("id-ID")}
-                  </p>
-                </div>
-                <div style={{ fontSize: "0.75rem", color: "#8E8680", textAlign: "right" }}>
-                  <p style={{ margin: 0 }}>No. Transaksi</p>
-                  <p style={{ fontWeight: 700, color: "#1F1B18", margin: 0 }}>TRX-202606214812</p>
-                </div>
-              </div>
-
-              {/* Bank Transfer Instructions / QR Code */}
-              <div style={{ border: "1px solid #EAE5E0", borderRadius: 10, padding: 20, marginBottom: 24, background: "#FCFCFA" }}>
-                <p style={{ fontSize: "0.8125rem", fontWeight: 800, color: "#8E8680", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 12px" }}>
-                  Detail Pembayaran
-                </p>
-                
-                {selectedPayment === "bca" && (
-                  <div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                      <span style={{ fontSize: "0.875rem", fontWeight: 800, color: "#1F1B18" }}>BCA Virtual Account</span>
-                      <span style={{ fontSize: "0.75rem", color: "#1D4ED8", background: "#EFF6FF", padding: "2px 8px", borderRadius: 4, fontWeight: 700 }}>Verifikasi Otomatis</span>
-                    </div>
-                    <p style={{ fontSize: "0.75rem", color: "#8E8680", margin: "0 0 6px" }}>Nomor Virtual Account</p>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", background: "white", padding: "10px 14px", borderRadius: 8, border: "1.5px solid #EAE5E0" }}>
-                      <span style={{ fontSize: "1.125rem", fontWeight: 800, letterSpacing: "0.05em", flex: 1, fontFamily: "monospace", color: "#1F1B18" }}>800108123456789</span>
-                      <button 
-                        onClick={() => handleCopyVa("800108123456789")}
-                        style={{ height: 32, padding: "0 14px", background: copiedVa ? "#16A34A" : "#1F1B18", color: "white", border: "none", borderRadius: 6, fontSize: "0.75rem", fontWeight: 700, cursor: "pointer", transition: "all 0.15s" }}
-                      >
-                        {copiedVa ? "✓ Disalin" : "Salin"}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {selectedPayment === "gopay" && (
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                      <span style={{ fontSize: "0.875rem", fontWeight: 800, color: "#1F1B18" }}>GoPay QRIS Code</span>
-                      <span style={{ fontSize: "0.75rem", color: "#16A34A", background: "#EBFDF2", padding: "2px 8px", borderRadius: 4, fontWeight: 700 }}>QRIS Instan</span>
-                    </div>
-                    <p style={{ fontSize: "0.75rem", color: "#8E8680", margin: "0 0 16px" }}>Pindai kode QRIS di bawah ini dengan aplikasi GoPay / e-Wallet Anda</p>
-                    <div style={{ display: "inline-block", background: "white", padding: 16, border: "1.5px solid #EAE5E0", borderRadius: 12, marginBottom: 12 }}>
-                      <div style={{ width: 150, height: 150, background: "repeating-conic-gradient(from 0deg, #1F1B18 0deg 90deg, white 90deg 180deg) 0 0/15px 15px, repeating-conic-gradient(from 45deg, #1D4ED8 0deg 90deg, #EFF6FF 90deg 180deg) 7px 7px/15px 15px", borderRadius: 4 }} />
-                    </div>
-                    <p style={{ fontSize: "0.7rem", color: "#8E8680", margin: 0 }}>QRIS berlisensi Bank Indonesia. Berlaku untuk semua aplikasi e-Wallet.</p>
-                  </div>
-                )}
-
-                {selectedPayment === "shopeepay" && (
-                  <div style={{ textAlign: "center", padding: "10px 0" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                      <span style={{ fontSize: "0.875rem", fontWeight: 800, color: "#1F1B18" }}>ShopeePay</span>
-                      <span style={{ fontSize: "0.75rem", color: "#EA580C", background: "#FFF7ED", padding: "2px 8px", borderRadius: 4, fontWeight: 700 }}>Aplikasi</span>
-                    </div>
-                    <p style={{ fontSize: "0.75rem", color: "#8E8680", margin: "0 0 16px" }}>Buka notifikasi di aplikasi Shopee Anda dan selesaikan pembayaran.</p>
-                    <div style={{ display: "inline-block", background: "#FFF7ED", color: "#EA580C", padding: "12px 24px", borderRadius: 8, fontWeight: 800, fontSize: "0.8125rem", border: "1px dashed #FED7AA" }}>
-                      ⏳ Menunggu Pembayaran dari Aplikasi...
-                    </div>
-                  </div>
-                )}
-
-                {selectedPayment === "cc" && (
-                  <div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                      <span style={{ fontSize: "0.875rem", fontWeight: 800, color: "#1F1B18" }}>Kartu Kredit</span>
-                      <span style={{ fontSize: "0.75rem", color: "#6B21A8", background: "#FAF5FF", padding: "2px 8px", borderRadius: 4, fontWeight: 700 }}>Visa/Mastercard</span>
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                      <div>
-                        <label style={{ display: "block", fontSize: "0.7rem", fontWeight: 700, color: "#5C5550", marginBottom: 4 }}>Nomor Kartu</label>
-                        <input type="text" placeholder="4111 2222 3333 4444" style={{ width: "100%", height: 38, border: "1.5px solid #D5CFC9", borderRadius: 6, padding: "0 12px", fontSize: "0.8125rem", fontFamily: "inherit" }} />
-                      </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                        <div>
-                          <label style={{ display: "block", fontSize: "0.7rem", fontWeight: 700, color: "#5C5550", marginBottom: 4 }}>Masa Berlaku</label>
-                          <input type="text" placeholder="MM/YY" style={{ width: "100%", height: 38, border: "1.5px solid #D5CFC9", borderRadius: 6, padding: "0 12px", fontSize: "0.8125rem", fontFamily: "inherit" }} />
-                        </div>
-                        <div>
-                          <label style={{ display: "block", fontSize: "0.7rem", fontWeight: 700, color: "#5C5550", marginBottom: 4 }}>CVV</label>
-                          <input type="text" placeholder="3 digit belakang" style={{ width: "100%", height: 38, border: "1.5px solid #D5CFC9", borderRadius: 6, padding: "0 12px", fontSize: "0.8125rem", fontFamily: "inherit" }} />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Panduan Transfer */}
-              <div style={{ marginBottom: 28 }}>
-                <h4 style={{ fontSize: "0.8125rem", fontWeight: 800, margin: "0 0 10px", color: "#1F1B18" }}>Panduan Pembayaran</h4>
-                <ol style={{ fontSize: "0.75rem", color: "#5C5550", paddingLeft: 16, margin: 0, display: "flex", flexDirection: "column", gap: 8, lineHeight: 1.5 }}>
-                  <li>Pilih menu <strong>Transfer → Virtual Account</strong> pada M-Banking Anda.</li>
-                  <li>Masukkan kode Virtual Account di atas.</li>
-                  <li>Konfirmasi detail tagihan yang muncul atas nama <strong>Pelataran UMKM</strong>.</li>
-                  <li>Selesaikan pembayaran dan simpan bukti transaksi Anda.</li>
-                </ol>
-              </div>
-
-              {/* Buttons */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <button
-                  onClick={() => setIsSuccess(true)}
-                  style={{
-                    width: "100%", height: 48, background: "#16A34A", color: "white", border: "none", borderRadius: 8,
-                    fontSize: "0.9375rem", fontWeight: 800, cursor: "pointer", transition: "background 0.15s",
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: 8
-                  }}
-                >
-                  <span style={{ fontSize: "1.1rem" }}>✓</span>
-                  <span>Simulasikan Pembayaran Berhasil</span>
-                </button>
-                
-                <button
-                  onClick={() => setIsPaying(false)}
-                  style={{
-                    width: "100%", height: 38, background: "none", border: "1.5px solid #D5CFC9", color: "#5C5550", borderRadius: 8,
-                    fontSize: "0.8125rem", fontWeight: 700, cursor: "pointer", transition: "background 0.15s"
-                  }}
-                >
-                  Batal / Kembali ke Checkout
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
+          <>
               <h1 style={{ fontSize: "1.75rem", fontWeight: 800, color: "#1F1B18", marginBottom: 24 }}>
                 Checkout
               </h1>
@@ -353,7 +374,7 @@ export default function CheckoutPage() {
                 {/* LEFT COLUMN */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
-                  {/* 1. SHIPPING ADDRESS */}
+                  {/* 1. SHIPPING ADDRESS / PICKUP */}
                   <div style={{
                     background: "white",
                     border: "1px solid #EAE5E0",
@@ -362,8 +383,9 @@ export default function CheckoutPage() {
                   }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                       <h3 style={{ fontSize: "0.8125rem", fontWeight: 800, color: "#8E8680", letterSpacing: "0.05em", textTransform: "uppercase" }}>
-                        Alamat Pengiriman
+                        {isOffline ? "Lokasi Pickup" : "Alamat Pengiriman"}
                       </h3>
+                      {!isOffline && (
                       <button 
                         onClick={() => {
                           setTempAddress({ ...address });
@@ -373,19 +395,40 @@ export default function CheckoutPage() {
                       >
                         Ubah
                       </button>
+                      )}
                     </div>
                     <div style={{ display: "flex", gap: 12 }}>
                       <div style={{ color: "#1D4ED8", marginTop: 2 }}>
                         <MapPin size={18} />
                       </div>
-                      <div>
-                        <p style={{ fontSize: "0.875rem", fontWeight: 800, color: "#1F1B18", marginBottom: 4 }}>
-                          {address.name} <span style={{ fontWeight: 500, color: "#5C5550" }}>({address.phone})</span>
-                        </p>
-                        <p style={{ fontSize: "0.8125rem", color: "#5C5550", lineHeight: 1.5 }}>
-                          {address.details}
-                        </p>
-                      </div>
+                      {isOffline ? (
+                        <div>
+                          <p style={{ fontSize: "0.875rem", fontWeight: 800, color: "#1F1B18", marginBottom: 4 }}>
+                            Ambil di Toko Kami
+                          </p>
+                          <p style={{ fontSize: "0.8125rem", color: "#5C5550", lineHeight: 1.5 }}>
+                            {PICKUP_STORE_ADDRESS}
+                          </p>
+                        </div>
+                      ) : addressId ? (
+                        <div>
+                          <p style={{ fontSize: "0.875rem", fontWeight: 800, color: "#1F1B18", marginBottom: 4 }}>
+                            {address.name} <span style={{ fontWeight: 500, color: "#5C5550" }}>({address.phone})</span>
+                          </p>
+                          <p style={{ fontSize: "0.8125rem", color: "#5C5550", lineHeight: 1.5 }}>
+                            {address.details}
+                          </p>
+                        </div>
+                      ) : (
+                        <div>
+                          <p style={{ fontSize: "0.875rem", fontWeight: 700, color: "#DC2626", marginBottom: 8 }}>
+                            Belum ada alamat pengiriman
+                          </p>
+                          <Link href="/account/address" style={{ fontSize: "0.8125rem", fontWeight: 700, color: "#1D4ED8" }}>
+                            Tambah alamat →
+                          </Link>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -401,7 +444,7 @@ export default function CheckoutPage() {
                     </h3>
                     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                       {items.map((item) => (
-                        <div key={item.id} style={{ display: "flex", gap: 16, alignItems: "center" }}>
+                        <div key={item.id_cart_item} style={{ display: "flex", gap: 16, alignItems: "center" }}>
                           <div style={{ position: "relative", width: 64, height: 64, borderRadius: 8, overflow: "hidden", background: "#F8F6F4", border: "1px solid #EAE5E0" }}>
                             <Image src={item.image} alt={item.name} fill style={{ objectFit: "cover" }} />
                           </div>
@@ -421,7 +464,7 @@ export default function CheckoutPage() {
                             {/* Dynamic quantity controls */}
                             <div style={{ display: "flex", alignItems: "center", gap: 8, border: "1.5px solid #D5CFC9", borderRadius: 6, padding: "2px 4px", background: "#FCFCFA" }}>
                               <button
-                                onClick={() => updateQty(item.id, -1)}
+                                onClick={() => updateQty(item.id_cart_item, -1)}
                                 disabled={item.quantity <= 1}
                                 style={{
                                   width: 24, height: 24, border: "none", background: "none", 
@@ -436,7 +479,7 @@ export default function CheckoutPage() {
                                 {item.quantity}
                               </span>
                               <button
-                                onClick={() => updateQty(item.id, 1)}
+                                onClick={() => updateQty(item.id_cart_item, 1)}
                                 style={{
                                   width: 24, height: 24, border: "none", background: "none", color: "#1F1B18",
                                   cursor: "pointer", fontWeight: "bold", fontSize: "0.875rem", display: "flex", alignItems: "center", justifyContent: "center"
@@ -457,50 +500,6 @@ export default function CheckoutPage() {
                     </div>
                   </div>
 
-                  {/* 3. SHIPPING METHOD */}
-                  <div style={{
-                    background: "white",
-                    border: "1px solid #EAE5E0",
-                    borderRadius: 12,
-                    padding: 24,
-                  }}>
-                    <h3 style={{ fontSize: "0.8125rem", fontWeight: 800, color: "#8E8680", letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: 16 }}>
-                      Metode Pengiriman
-                    </h3>
-                    <div style={{ position: "relative" }}>
-                      <select
-                        value={selectedShipping.id}
-                        onChange={(e) => {
-                          const selected = SHIPPING_METHODS.find((s) => s.id === e.target.value);
-                          if (selected) setSelectedShipping(selected);
-                        }}
-                        style={{
-                          width: "100%",
-                          height: 48,
-                          borderRadius: 8,
-                          border: "1.5px solid #D5CFC9",
-                          padding: "0 40px 0 16px",
-                          fontSize: "0.875rem",
-                          color: "#1F1B18",
-                          fontFamily: "inherit",
-                          appearance: "none",
-                          background: "white",
-                          cursor: "pointer",
-                          outline: "none",
-                        }}
-                      >
-                        {SHIPPING_METHODS.map((method) => (
-                          <option key={method.id} value={method.id}>
-                            {method.name}
-                          </option>
-                        ))}
-                      </select>
-                      <div style={{ position: "absolute", right: 16, top: "50%", transform: "translateY(-50%)", color: "#5C5550", pointerEvents: "none" }}>
-                        <ChevronDown size={18} />
-                      </div>
-                    </div>
-                  </div>
-
                   {/* 4. PAYMENT METHOD */}
                   <div style={{
                     background: "white",
@@ -512,12 +511,12 @@ export default function CheckoutPage() {
                       Pilih Pembayaran
                     </h3>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                      {PAYMENT_METHODS.map((method) => {
-                        const isSelected = selectedPayment === method.id;
+                      {CHECKOUT_PAYMENT_OPTIONS.map((method) => {
+                        const isSelected = selectedPaymentType === method.id;
                         return (
                           <div
                             key={method.id}
-                            onClick={() => setSelectedPayment(method.id)}
+                            onClick={() => setSelectedPaymentType(method.id)}
                             style={{
                               border: isSelected ? "1.5px solid #1D4ED8" : "1.5px solid #EAE5E0",
                               borderRadius: 8,
@@ -657,8 +656,10 @@ export default function CheckoutPage() {
                         <span style={{ color: "#1F1B18" }}>Rp {totalItemPrice.toLocaleString("id-ID")}</span>
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span>Total Ongkos Kirim ({totalWeight.toFixed(1)} kg)</span>
-                        <span style={{ color: "#1F1B18" }}>Rp {shippingCost.toLocaleString("id-ID")}</span>
+                        <span>{isOffline ? "Ongkos Kirim" : "Ongkos Kirim (via chat admin)"}</span>
+                        <span style={{ color: "#1F1B18" }}>
+                          {isOffline ? "Gratis (Pickup)" : "Dikonfirmasi setelah bayar"}
+                        </span>
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
                         <span>Biaya Layanan</span>
@@ -706,7 +707,7 @@ export default function CheckoutPage() {
                       <span>Memproses...</span>
                     </>
                   ) : (
-                    <span>Bayar Sekarang</span>
+                    <span>{isOffline ? "Lanjut Pickup di Toko" : "Bayar Digital"}</span>
                   )}
                 </button>
 
@@ -717,8 +718,7 @@ export default function CheckoutPage() {
 
             </div>
           </div>
-            </>
-          )}
+          </>
         </div>
       </main>
 
@@ -817,6 +817,88 @@ export default function CheckoutPage() {
         </div>
       )}
 
+      {/* PICKUP CONFIRMATION MODAL */}
+      {showPickupModal && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(31, 27, 24, 0.45)",
+          backdropFilter: "blur(4px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1150,
+          padding: 24,
+        }}>
+          <div style={{
+            background: "white",
+            width: "100%",
+            maxWidth: 480,
+            borderRadius: 16,
+            border: "1px solid #EAE5E0",
+            padding: 28,
+            boxShadow: "var(--shadow-lg)",
+          }}>
+            <h3 style={{ fontSize: "1.125rem", fontWeight: 800, color: "#1F1B18", marginBottom: 12 }}>
+              Ambil di Toko Kami
+            </h3>
+            <p style={{ fontSize: "0.8125rem", color: "#5C5550", lineHeight: 1.6, marginBottom: 16 }}>
+              Pesanan ini akan diambil langsung di toko kami. Silakan datang ke alamat berikut untuk bayar dan ambil barang:
+            </p>
+            <div style={{
+              background: "#EFF6FF",
+              border: "1px solid #BFDBFE",
+              borderRadius: 10,
+              padding: 16,
+              marginBottom: 20,
+            }}>
+              <p style={{ fontSize: "0.875rem", fontWeight: 700, color: "#1F1B18", lineHeight: 1.5, margin: 0 }}>
+                {PICKUP_STORE_ADDRESS}
+              </p>
+            </div>
+            <p style={{ fontSize: "0.75rem", color: "#8E8680", marginBottom: 20 }}>
+              Pembayaran dilakukan saat pickup di toko (cash/transfer di lokasi).
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => setShowPickupModal(false)}
+                style={{
+                  flex: 1, height: 44, background: "none", border: "1.5px solid #D5CFC9",
+                  borderRadius: 8, fontSize: "0.875rem", fontWeight: 700, cursor: "pointer", color: "#5C5550",
+                }}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmPickup}
+                disabled={!pickupCanConfirm || isProcessing}
+                style={{
+                  flex: 1, height: 44,
+                  background: pickupCanConfirm ? "#1D4ED8" : "#93C5FD",
+                  color: "white", border: "none", borderRadius: 8,
+                  fontSize: "0.875rem", fontWeight: 700,
+                  cursor: pickupCanConfirm && !isProcessing ? "pointer" : "not-allowed",
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                }}
+              >
+                {isProcessing ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Memproses...
+                  </>
+                ) : pickupCanConfirm ? (
+                  "Konfirmasi"
+                ) : (
+                  `Konfirmasi (${pickupCountdown}s)`
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* PAYMENT SUCCESS MODAL */}
       {isSuccess && (
         <div style={{
@@ -845,10 +927,12 @@ export default function CheckoutPage() {
             </div>
             
             <h2 style={{ fontSize: "1.25rem", fontWeight: 800, color: "#1F1B18", marginBottom: 6 }}>
-              Pembayaran Berhasil!
+              {successMode === "offline" ? "Pesanan Pickup Dikonfirmasi!" : "Pembayaran Berhasil!"}
             </h2>
             <p style={{ fontSize: "0.8125rem", color: "#5C5550", marginBottom: 20 }}>
-              Pesanan Anda telah diterima dan pelapak akan segera mengirimkannya.
+              {successMode === "offline"
+                ? "Datang ke toko kami untuk bayar dan ambil pesanan Anda."
+                : "Admin akan menghubungi Anda via chat untuk mengatur pengiriman."}
             </p>
 
             <div style={{
@@ -865,21 +949,41 @@ export default function CheckoutPage() {
             }}>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span style={{ color: "#8E8680" }}>No. Transaksi</span>
-                <span style={{ fontWeight: 700, color: "#1F1B18" }}>TRX-202606190045</span>
+                <span style={{ fontWeight: 700, color: "#1F1B18" }}>{transactionRef || "—"}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: "#8E8680" }}>Metode Pembayaran</span>
+                <span style={{ color: "#8E8680" }}>Metode</span>
                 <span style={{ fontWeight: 700, color: "#1F1B18" }}>
-                  {PAYMENT_METHODS.find((p) => p.id === selectedPayment)?.name}
+                  {successMode === "offline" ? "Ambil di Toko" : "Bayar Digital"}
                 </span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: "#8E8680" }}>Total Dibayar</span>
+                <span style={{ color: "#8E8680" }}>Total</span>
                 <span style={{ fontWeight: 800, color: "#1D4ED8" }}>Rp {totalBill.toLocaleString("id-ID")}</span>
               </div>
             </div>
 
-            <Link href="/" style={{
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {successMode === "digital" && placedOrders[0] && (
+              <Link href={`/account/orders/${placedOrders[0].id_order}/chat`} style={{
+                width: "100%",
+                height: 44,
+                background: "#16A34A",
+                color: "white",
+                borderRadius: 8,
+                fontSize: "0.875rem",
+                fontWeight: 700,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+                textDecoration: "none",
+              }}>
+                Buka Chat Pengiriman
+                <ArrowRight size={16} />
+              </Link>
+            )}
+            <Link href={successMode === "offline" ? "/account/orders" : "/"} style={{
               width: "100%",
               height: 44,
               background: "#1D4ED8",
@@ -894,9 +998,10 @@ export default function CheckoutPage() {
               textDecoration: "none",
               transition: "background 0.15s",
             }}>
-              <span>Kembali ke Beranda</span>
+              <span>{successMode === "offline" ? "Lihat Pesanan Saya" : "Kembali ke Beranda"}</span>
               <ArrowRight size={16} />
             </Link>
+            </div>
           </div>
         </div>
       )}

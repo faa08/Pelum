@@ -7,16 +7,15 @@ import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { authService } from "@/backend/authService";
-import { sellerService } from "@/backend/sellerService";
+import { sellerService, type Seller, type StoreStats } from "@/backend/sellerService";
 import { productService } from "@/backend/productService";
+import { parseProductImg, ProductGridImage } from "@/lib/productUi";
 import { cartService } from "@/backend/cartService";
-import { useCustomerService } from "@/components/CustomerServiceProvider";
 import { 
   Store, 
   MapPin, 
   Star, 
   UserCheck, 
-  MessageSquare, 
   Share2, 
   Plus, 
   Check, 
@@ -29,7 +28,9 @@ import {
 } from "lucide-react";
 
 interface Product {
-  id: number;
+  id: number | string;
+  id_produk?: string;
+  slug?: string;
   name: string;
   price: number;
   rating: number;
@@ -38,34 +39,43 @@ interface Product {
   category: string;
 }
 
-const SHOP_PRODUCTS: Product[] = [
-  { id: 1, name: "Mangkuk Keramik Motif Megamendung Handmade", category: "KERAJINAN", price: 125000, rating: 4.9, sold: 120, image: "/product-keramik.png" },
-  { id: 2, name: "Gelas Keramik Motif Batik Indigo", category: "KERAJINAN", price: 75000, rating: 4.8, sold: 160, image: "/similar-1.png" },
-  { id: 3, name: "Piring Dekoratif Batik Parang", category: "KERAJINAN", price: 95000, rating: 5.0, sold: 45, image: "/similar-2.png" },
-  { id: 4, name: "Set Wadah Sambel Keramik", category: "KERAJINAN", price: 120000, rating: 4.7, sold: 80, image: "/similar-3.png" },
-  { id: 5, name: "Vas Bunga Keramik Kontemporer", category: "KERAJINAN", price: 210000, rating: 4.9, sold: 30, image: "/similar-4.png" },
-  { id: 6, name: "Teko Keramik Handmade Tradisional", category: "KERAJINAN", price: 320000, rating: 4.6, sold: 15, image: "/similar-5.png" }
-];
+const SHOP_PRODUCTS_FALLBACK: Product[] = [];
 
-const SHOP_REVIEWS = [
-  { id: 1, user: "Budi Nugraha", rating: 5, time: "2 hari yang lalu", text: "Barangnya sangat bagus, packing aman sekali tebal bubble wrap-nya. Motif batiknya sangat rapi." },
-  { id: 2, user: "Siti Rahmawati", rating: 5, time: "5 hari yang lalu", text: "Mangkuknya cantik sekali, pas buat hiasan maupun dipakai makan sehari-hari. Sukses terus UMKM Jogja!" },
-  { id: 3, user: "Hendra Wijaya", rating: 4, time: "1 minggu yang lalu", text: "Kualitas keramiknya bagus, tebal dan kokoh. Pengiriman agak lambat sedikit dari kurir tapi seller ramah banget." }
-];
+function formatCount(n: number): string {
+  if (n >= 1000) {
+    const val = n / 1000;
+    return `${val % 1 === 0 ? val.toFixed(0) : val.toFixed(1).replace(/\.0$/, "")}RB`;
+  }
+  return String(n);
+}
+
+function formatJoined(dateStr: string): string {
+  if (!dateStr) return "-";
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return "-";
+  const now = new Date();
+  const months = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth());
+  if (months < 1) return "Baru";
+  if (months < 12) return `${months} Bln Lalu`;
+  const years = Math.floor(months / 12);
+  return years === 1 ? "1 Thn Lalu" : `${years} Thn Lalu`;
+}
 
 export default function StorefrontPage({ params }: { params: Promise<{ slug: string }> }) {
   const resolvedParams = use(params);
   const slug = resolvedParams.slug;
   const router = useRouter();
-  const { open: openCustomerService } = useCustomerService();
 
-  const [seller, setSeller] = useState<any>(null);
+  const [seller, setSeller] = useState<Seller | null>(null);
   const [products, setProducts] = useState<any[]>([]);
+  const [storeStats, setStoreStats] = useState<StoreStats | null>(null);
+  const [productStats, setProductStats] = useState<Record<string, { rating: number; sold: number; reviewCount: number }>>({});
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<any>(null);
 
   const [activeTab, setActiveTab] = useState<"home" | "products" | "reviews">("home");
   const [isFollowing, setIsFollowing] = useState(false);
+  const [shopReviews, setShopReviews] = useState<{ id: string; user: string; rating: number; time: string; text: string }[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
@@ -81,8 +91,29 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
       const s = await sellerService.getSellerByIdOrSlug(slug);
       if (s) {
         setSeller(s);
-        const p = await productService.getProductsBySeller(s.id_seller);
+        const user = authService.getCurrentUser();
+        const [p, reviews, stats, following] = await Promise.all([
+          productService.getProductsBySeller(s.id_seller),
+          productService.getStoreReviews(s.id_seller),
+          sellerService.getStoreStats(s.id_seller),
+          user ? sellerService.isFollowingStore(user.id_user, s.id_seller) : Promise.resolve(false),
+        ]);
         setProducts(p);
+        setShopReviews(reviews);
+        setStoreStats(stats);
+        setIsFollowing(following);
+        if (p.length > 0) {
+          const pStats = await productService.getProductStats(p.map((item) => item.id_produk));
+          setProductStats(pStats);
+        } else {
+          setProductStats({});
+        }
+      } else {
+        setSeller(null);
+        setProducts([]);
+        setStoreStats(null);
+        setShopReviews([]);
+        setProductStats({});
       }
     } catch (err) {
       console.error(err);
@@ -91,8 +122,42 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
     }
   }
 
-  function handleContactSeller() {
-    openCustomerService();
+  async function handleFollowToggle() {
+    if (!seller) return;
+    const user = authService.getCurrentUser();
+    if (!user) {
+      alert("Silakan masuk untuk mengikuti toko.");
+      router.push("/masuk");
+      return;
+    }
+    if (isFollowing) {
+      const res = await sellerService.unfollowStore(user.id_user, seller.id_seller);
+      if (res.ok) {
+        setIsFollowing(false);
+        setStoreStats((prev) =>
+          prev ? { ...prev, followerCount: Math.max(0, prev.followerCount - 1) } : prev
+        );
+      } else if (res.error) {
+        alert(res.error);
+      }
+    } else {
+      const res = await sellerService.followStore(user.id_user, seller.id_seller);
+      if (res.ok) {
+        setIsFollowing(true);
+        setStoreStats((prev) => (prev ? { ...prev, followerCount: prev.followerCount + 1 } : prev));
+      } else if (res.error) {
+        alert(res.error);
+      }
+    }
+  }
+
+  function handleShareStore() {
+    const url = window.location.href;
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(url).then(() => alert("Tautan toko berhasil disalin!"));
+    } else {
+      alert(url);
+    }
   }
 
   async function handleAddToCart(productItem: any) {
@@ -101,28 +166,65 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
       router.push("/masuk");
       return;
     }
-    const success = await cartService.addToCart(currentUser.id_user, productItem.id_produk, 1);
-    if (success) {
-      alert(`Menambahkan ${productItem.nama_produk} ke keranjang!`);
+    const result = await cartService.addToCart(currentUser.id_user, productItem.id_produk, 1);
+    if (result.ok) {
+      alert(`Menambahkan ${productItem.nama_produk || productItem.name} ke keranjang!`);
     } else {
-      alert("Gagal menambahkan ke keranjang.");
+      alert(result.error || "Gagal menambahkan ke keranjang.");
     }
   }
 
-  const shopName = seller?.nm_store || (slug === "griya-keramik" ? "Griya Keramik Kasongan" : "Toko Kreatif UMKM");
-  const shopLocation = seller?.addr || (slug === "griya-keramik" ? "Bantul, Yogyakarta" : "Sleman, Yogyakarta");
+  const shopName = seller?.nm_store || "Toko UMKM";
+  const shopLocation = seller?.addr?.trim() || "Indonesia";
+  const shopLogo = seller?.logo_toko?.trim() || "";
 
-  // Map state products or backup static list if empty
   const activeProducts = products.length > 0 ? products.map(p => ({
     id: p.id_produk,
     id_produk: p.id_produk,
+    slug: p.slug || p.id_produk,
     name: p.nama_produk,
     category: p.category || "UMKM LOKAL",
     price: p.harga,
-    rating: 4.8, // default rating mockup
-    sold: 10,
-    image: p.img || "/product-keramik.png"
-  })) : SHOP_PRODUCTS;
+    rating: productStats[p.id_produk]?.rating ?? 0,
+    sold: productStats[p.id_produk]?.sold ?? 0,
+    image: parseProductImg(p.img)
+  })) : SHOP_PRODUCTS_FALLBACK;
+
+  const storeRating = storeStats?.avgRating ?? 0;
+  const storeReviewCount = storeStats?.reviewCount ?? shopReviews.length;
+  const ratingBreakdown = [5, 4, 3, 2, 1].map((star) => {
+    const count = shopReviews.filter((r) => r.rating === star).length;
+    const pct = shopReviews.length ? Math.round((count / shopReviews.length) * 100) : 0;
+    return { star, pct };
+  });
+
+  const headerStats = [
+    {
+      icon: <ShoppingBag size={13} />,
+      label: "Produk",
+      value: `${storeStats?.productCount ?? products.length} Item${(storeStats?.productCount ?? products.length) !== 1 ? "s" : ""}`,
+    },
+    {
+      icon: <UserCheck size={13} />,
+      label: "Pengikut",
+      value: formatCount(storeStats?.followerCount ?? 0),
+    },
+    {
+      icon: <Star size={13} />,
+      label: "Penilaian",
+      value: storeReviewCount > 0 ? `${storeRating} / 5.0` : "Belum ada",
+    },
+    {
+      icon: <Calendar size={13} />,
+      label: "Bergabung",
+      value: formatJoined(storeStats?.joinedAt || seller?.created_at || ""),
+    },
+    {
+      icon: <TrendingUp size={13} />,
+      label: "Terjual",
+      value: (storeStats?.totalSold ?? 0) > 0 ? `${formatCount(storeStats!.totalSold)}+` : "0",
+    },
+  ];
 
   // Filter products by search query
   const filteredProducts = activeProducts.filter((p) =>
@@ -142,7 +244,7 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
           <div className="h-28 w-full bg-gradient-to-r from-blue-900 via-blue-700 to-blue-500 relative">
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,_var(--tw-gradient-stops))] from-white/10 via-transparent to-transparent" />
             <button
-              onClick={() => alert("Tautan toko berhasil disalin ke clipboard!")}
+              onClick={handleShareStore}
               title="Bagikan Toko"
               className="absolute top-3 right-3 w-8 h-8 bg-white/20 hover:bg-white/30 backdrop-blur-sm border border-white/30 rounded-full flex items-center justify-center text-white transition"
             >
@@ -151,9 +253,20 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
 
             {/* Avatar di dalam banner, menempel di pojok kiri bawah */}
             <div className="absolute -bottom-8 left-6">
-              <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-blue-700 to-blue-950 border-4 border-white flex items-center justify-center text-white shadow-lg flex-shrink-0">
-                <Store size={26} />
-              </div>
+              {shopLogo ? (
+                <div className="w-16 h-16 rounded-xl border-4 border-white shadow-lg flex-shrink-0 overflow-hidden bg-white">
+                  {shopLogo.startsWith("data:") ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={shopLogo} alt={shopName} className="w-full h-full object-cover" />
+                  ) : (
+                    <Image src={shopLogo} alt={shopName} width={64} height={64} className="w-full h-full object-cover" />
+                  )}
+                </div>
+              ) : (
+                <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-blue-700 to-blue-950 border-4 border-white flex items-center justify-center text-white shadow-lg flex-shrink-0">
+                  <Store size={26} />
+                </div>
+              )}
             </div>
           </div>
 
@@ -165,26 +278,31 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
               <div>
                 <div className="flex items-center gap-2 flex-wrap mb-1.5">
                   <h1 className="font-headline text-lg font-bold text-on-surface">{shopName}</h1>
-                  <span className="bg-[#EFF6FF] text-[#1D4ED8] text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-[#BFDBFE] flex items-center gap-1 select-none">
-                    <ShieldCheck size={9} />
-                    Verified Merchant
-                  </span>
+                  {seller?.is_verified !== false && (
+                    <span className="bg-[#EFF6FF] text-[#1D4ED8] text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-[#BFDBFE] flex items-center gap-1 select-none">
+                      <ShieldCheck size={9} />
+                      Verified Merchant
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-4 text-xs text-secondary font-medium flex-wrap">
                   <span className="flex items-center gap-1">
                     <MapPin size={11} className="opacity-60" />
                     {shopLocation}
                   </span>
-                  <span className="flex items-center gap-1.5 text-green-600 font-semibold">
-                    <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                    Online · Aktif 5 menit lalu
-                  </span>
+                  {seller && (
+                    <span className="flex items-center gap-1.5 text-green-600 font-semibold">
+                      <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                      Toko Aktif
+                    </span>
+                  )}
                 </div>
               </div>
 
               <div className="flex items-center gap-2 flex-shrink-0">
                 <button
-                  onClick={() => setIsFollowing(!isFollowing)}
+                  onClick={handleFollowToggle}
+                  disabled={!seller || loading}
                   className={`h-8 px-4 rounded-lg text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
                     isFollowing
                       ? "bg-[#F0F0F0] text-[#5C5550] border border-[#D5CFC9] hover:bg-[#E8E8E8]"
@@ -193,13 +311,6 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
                 >
                   {isFollowing ? <><Check size={12} />Mengikuti</> : <><Plus size={12} />Ikuti Toko</>}
                 </button>
-                <button
-                  onClick={handleContactSeller}
-                  className="h-8 px-4 rounded-lg border border-[#1D4ED8] text-[#1D4ED8] bg-white text-xs font-bold hover:bg-[#EFF6FF] transition flex items-center gap-1.5 whitespace-nowrap"
-                >
-                  <MessageSquare size={12} />
-                  Chat Penjual
-                </button>
               </div>
             </div>
 
@@ -207,15 +318,8 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
             <div className="h-px bg-[#EAE5E0] my-5" />
 
             {/* Stats */}
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-              {[
-                { icon: <ShoppingBag size={13} />, label: "Produk", value: "45 Items" },
-                { icon: <UserCheck size={13} />, label: "Pengikut", value: "1.2RB" },
-                { icon: <Star size={13} />, label: "Penilaian", value: "4.9 / 5.0" },
-                { icon: <MessageSquare size={13} />, label: "Resp. Chat", value: "98% Cepat" },
-                { icon: <Calendar size={13} />, label: "Bergabung", value: "1 Thn Lalu" },
-                { icon: <TrendingUp size={13} />, label: "Terjual", value: "1.8RB+" },
-              ].map((stat) => (
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+              {headerStats.map((stat) => (
                 <div key={stat.label} className="flex flex-col items-center text-center gap-1.5 py-3 px-2 rounded-xl bg-[#F8FAFF] border border-[#E8F0FE]">
                   <div className="w-7 h-7 rounded-lg bg-white border border-[#BFDBFE] flex items-center justify-center text-primary shadow-sm">
                     {stat.icon}
@@ -268,58 +372,20 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
           {/* TAB 1: HOME PAGE */}
           {activeTab === "home" && (
             <>
-              {/* Voucher Section (Shopee/Tokopedia Style) */}
-              <div className="bg-white border border-[#EAE5E0] rounded-xl p-5 shadow-sm space-y-3">
-                <h3 className="font-bold text-xs uppercase tracking-wider text-secondary flex items-center gap-1.5">
-                  <TrendingUp size={14} className="text-primary" />
-                  Voucher Spesial Toko
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Voucher 1 */}
-                  <div className="border border-dashed border-[#1D4ED8]/30 bg-primary-pale rounded-lg p-4 flex justify-between items-center">
-                    <div>
-                      <span className="text-[9px] uppercase font-extrabold bg-[#1D4ED8] text-white px-1.5 py-0.5 rounded">Diskon Toko</span>
-                      <h4 className="font-extrabold text-sm text-on-surface mt-1">Potongan Rp 15.000</h4>
-                      <p className="text-[10px] text-secondary font-medium">Minimal belanja Rp 150.000</p>
-                    </div>
-                    <button
-                      onClick={() => alert("Voucher Potongan Belanja berhasil diklaim!")}
-                      className="bg-primary text-white text-xs font-bold px-4 py-2 rounded hover:brightness-95 transition"
-                    >
-                      Klaim
-                    </button>
-                  </div>
-                  {/* Voucher 2 */}
-                  <div className="border border-dashed border-[#1D4ED8]/30 bg-primary-pale rounded-lg p-4 flex justify-between items-center">
-                    <div>
-                      <span className="text-[9px] uppercase font-extrabold bg-[#1D4ED8] text-white px-1.5 py-0.5 rounded">Free Ongkir</span>
-                      <h4 className="font-extrabold text-sm text-on-surface mt-1">Gratis Ongkir s/d Rp 20.000</h4>
-                      <p className="text-[10px] text-secondary font-medium">Minimal belanja Rp 100.000</p>
-                    </div>
-                    <button
-                      onClick={() => alert("Voucher Gratis Ongkir berhasil diklaim!")}
-                      className="bg-primary text-white text-xs font-bold px-4 py-2 rounded hover:brightness-95 transition"
-                    >
-                      Klaim
-                    </button>
-                  </div>
-                </div>
-              </div>
-
               {/* Showcase Category 1: Recommended Products */}
               <div className="space-y-4">
                 <h3 className="font-headline text-lg font-bold text-on-surface">Sesuai incaran Anda di toko ini</h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                   {activeProducts.slice(0, 4).map((product) => (
                     <article key={product.id} className="bg-white border border-[#EAE5E0] rounded-xl overflow-hidden flex flex-col shadow-xs group hover:shadow-md transition duration-200">
-                      <Link href={`/produk/${product.id}`} className="block relative aspect-square bg-[#F8F6F4]">
-                        <Image src={product.image} alt={product.name} fill className="object-cover" />
+                      <Link href={`/produk/${product.slug}`} className="block relative aspect-square bg-[#F8F6F4]">
+                        <ProductGridImage src={product.image} alt={product.name} />
                       </Link>
                       <div className="p-4 flex-1 flex flex-col justify-between">
                         <div className="space-y-1">
                           <p className="text-[9px] uppercase font-extrabold text-primary">{product.category}</p>
                           <h4 className="font-bold text-xs text-on-surface leading-snug line-clamp-2 h-8 hover:text-primary transition">
-                            <Link href={`/produk/${product.id}`}>{product.name}</Link>
+                            <Link href={`/produk/${product.slug}`}>{product.name}</Link>
                           </h4>
                           <p className="text-sm font-black text-primary">Rp {product.price.toLocaleString("id-ID")}</p>
                         </div>
@@ -350,14 +416,14 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                   {activeProducts.slice(2, 6).map((product) => (
                     <article key={product.id} className="bg-white border border-[#EAE5E0] rounded-xl overflow-hidden flex flex-col shadow-xs group hover:shadow-md transition duration-200">
-                      <Link href={`/produk/${product.id}`} className="block relative aspect-square bg-[#F8F6F4]">
-                        <Image src={product.image} alt={product.name} fill className="object-cover" />
+                      <Link href={`/produk/${product.slug}`} className="block relative aspect-square bg-[#F8F6F4]">
+                        <ProductGridImage src={product.image} alt={product.name} />
                       </Link>
                       <div className="p-4 flex-1 flex flex-col justify-between">
                         <div className="space-y-1">
                           <p className="text-[9px] uppercase font-extrabold text-primary">{product.category}</p>
                           <h4 className="font-bold text-xs text-on-surface leading-snug line-clamp-2 h-8 hover:text-primary transition">
-                            <Link href={`/produk/${product.id}`}>{product.name}</Link>
+                            <Link href={`/produk/${product.slug}`}>{product.name}</Link>
                           </h4>
                           <p className="text-sm font-black text-primary">Rp {product.price.toLocaleString("id-ID")}</p>
                         </div>
@@ -410,14 +476,14 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                   {filteredProducts.map((product) => (
                     <article key={product.id} className="bg-white border border-[#EAE5E0] rounded-xl overflow-hidden flex flex-col shadow-xs group hover:shadow-md transition duration-200">
-                      <Link href={`/produk/${product.id}`} className="block relative aspect-square bg-[#F8F6F4]">
-                        <Image src={product.image} alt={product.name} fill className="object-cover" />
+                      <Link href={`/produk/${product.slug}`} className="block relative aspect-square bg-[#F8F6F4]">
+                        <ProductGridImage src={product.image} alt={product.name} />
                       </Link>
                       <div className="p-4 flex-1 flex flex-col justify-between">
                         <div className="space-y-1">
                           <p className="text-[9px] uppercase font-extrabold text-primary">{product.category}</p>
                           <h4 className="font-bold text-xs text-on-surface leading-snug line-clamp-2 h-8 hover:text-primary transition">
-                            <Link href={`/produk/${product.id}`}>{product.name}</Link>
+                            <Link href={`/produk/${product.slug}`}>{product.name}</Link>
                           </h4>
                           <p className="text-sm font-black text-primary">Rp {product.price.toLocaleString("id-ID")}</p>
                         </div>
@@ -454,41 +520,42 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
               {/* Review summary cards */}
               <div className="bg-white border border-[#EAE5E0] p-6 rounded-xl shadow-sm flex flex-col sm:flex-row gap-6 justify-around items-center">
                 <div className="text-center space-y-1">
-                  <h4 className="text-4xl font-extrabold text-primary">4.9</h4>
+                  <h4 className="text-4xl font-extrabold text-primary">
+                    {storeReviewCount > 0 ? storeRating.toFixed(1) : "-"}
+                  </h4>
                   <div className="flex gap-0.5 text-amber-500 justify-center">
-                    {[1, 2, 3, 4, 5].map((i) => <Star key={i} size={16} fill="#F59E0B" color="#F59E0B" />)}
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <Star
+                        key={i}
+                        size={16}
+                        fill={storeReviewCount > 0 && i <= Math.round(storeRating) ? "#F59E0B" : "none"}
+                        color="#F59E0B"
+                      />
+                    ))}
                   </div>
-                  <p className="text-xs text-secondary font-semibold">240 Ulasan Terverifikasi</p>
+                  <p className="text-xs text-secondary font-semibold">
+                    {storeReviewCount} Ulasan{storeReviewCount !== 1 ? "" : ""}
+                  </p>
                 </div>
                 <div className="w-[1px] h-16 bg-[#EAE5E0] hidden sm:block" />
                 <div className="space-y-2 w-full sm:w-auto text-xs font-semibold text-secondary">
-                  <div className="flex items-center gap-2">
-                    <span className="w-8">5 Bintang</span>
-                    <div className="flex-1 sm:w-48 h-2 bg-surface-container rounded-full overflow-hidden">
-                      <div className="bg-amber-500 h-full w-[95%]" />
+                  {ratingBreakdown.slice(0, 3).map(({ star, pct }) => (
+                    <div key={star} className="flex items-center gap-2">
+                      <span className="w-8">{star} Bintang</span>
+                      <div className="flex-1 sm:w-48 h-2 bg-surface-container rounded-full overflow-hidden">
+                        <div className="bg-amber-500 h-full" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="w-8 text-right">{pct}%</span>
                     </div>
-                    <span className="w-8 text-right">95%</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-8">4 Bintang</span>
-                    <div className="flex-1 sm:w-48 h-2 bg-surface-container rounded-full overflow-hidden">
-                      <div className="bg-amber-500 h-full w-[4%]" />
-                    </div>
-                    <span className="w-8 text-right">4%</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-8">3 Bintang</span>
-                    <div className="flex-1 sm:w-48 h-2 bg-surface-container rounded-full overflow-hidden">
-                      <div className="bg-[#EAE5E0] h-full w-[1%]" />
-                    </div>
-                    <span className="w-8 text-right">1%</span>
-                  </div>
+                  ))}
                 </div>
               </div>
 
               {/* Review List */}
               <div className="bg-white border border-[#EAE5E0] rounded-xl shadow-sm divide-y divide-[#EAE5E0]/40">
-                {SHOP_REVIEWS.map((rev) => (
+                {shopReviews.length === 0 ? (
+                  <p className="p-6 text-sm text-secondary">Belum ada ulasan untuk toko ini.</p>
+                ) : shopReviews.map((rev) => (
                   <div key={rev.id} className="p-6 flex gap-4 items-start">
                     <div className="w-9 h-9 rounded-full bg-surface-container text-secondary flex items-center justify-center font-bold text-sm border border-surface-container-high flex-shrink-0">
                       {rev.user.split(" ").map(n => n[0]).join("")}

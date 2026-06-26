@@ -29,6 +29,10 @@ const isPlaceholder = () => {
   return !url || url.includes("placeholder") || !key || key.includes("placeholder");
 };
 
+export type LoginError = "not_found" | "wrong_password" | "no_password" | "db_error";
+
+export type LoginResult = { user: User | null; error?: LoginError };
+
 export const authService = {
   isSupabaseConfigured(): boolean {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -63,26 +67,23 @@ export const authService = {
   },
 
   // Login authentication
-  async login(email: string, password?: string): Promise<User | null> {
+  async login(email: string, password?: string): Promise<LoginResult> {
     const normalizedEmail = email.trim().toLowerCase();
-    console.log("Calling authService.login for email:", normalizedEmail);
-    
+
     if (isPlaceholder()) {
-      console.warn("Using fallback local storage login (no Supabase config found)");
       const storedUsers = localStorage.getItem("pelum_users");
       if (storedUsers) {
         const users = JSON.parse(storedUsers) as any[];
         const user = users.find(u => u.email?.toLowerCase() === normalizedEmail);
         if (user) {
           if (password && user.password && user.password !== password) {
-            console.error("Login failed: password mismatch");
-            return null;
+            return { user: null, error: "wrong_password" };
           }
           this.setCurrentUser(user);
-          return user;
+          return { user };
         }
       }
-      return null;
+      return { user: null, error: "not_found" };
     }
 
     try {
@@ -94,23 +95,19 @@ export const authService = {
 
       if (error) {
         console.error("Supabase login query error:", error.message || error);
-        return null;
+        return { user: null, error: "db_error" };
       }
 
       if (!data) {
-        console.warn("Supabase login: Email not found in database:", normalizedEmail);
-        return null;
+        return { user: null, error: "not_found" };
       }
 
-      // Password verification (plain text — sesuai skema db.sql saat ini)
       if (password && data.password && data.password !== password) {
-        console.error("Login failed: password mismatch");
-        return null;
+        return { user: null, error: "wrong_password" };
       }
 
       if (password && !data.password) {
-        console.error("Login failed: user has no password set in database");
-        return null;
+        return { user: null, error: "no_password" };
       }
 
       let userRole = data.role;
@@ -129,10 +126,10 @@ export const authService = {
         created_at: data.created_at
       };
       this.setCurrentUser(loggedUser);
-      return loggedUser;
+      return { user: loggedUser };
     } catch (err) {
       console.error("Auth login request failed:", err);
-      return null;
+      return { user: null, error: "db_error" };
     }
   },
 

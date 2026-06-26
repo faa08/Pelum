@@ -1,26 +1,19 @@
 "use client";
 
-import { useState, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { Search, SlidersHorizontal, Star, ShoppingCart, ChevronRight } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import SearchBar from "@/components/SearchBar";
 import Footer from "@/components/Footer";
+import { productService } from "@/backend/productService";
+import { cartService } from "@/backend/cartService";
+import { authService } from "@/backend/authService";
+import { productToCard, type ProductCard, ProductGridImage } from "@/lib/productUi";
 
 const C = { primary: "#1D4ED8", primaryDark: "#1E40AF", primaryPale: "#EFF6FF", border: "#EAE5E0", borderStrong: "#D5CFC9", text: "#1F1B18", textSec: "#5C5550", textMuted: "#8E8680" };
-
-const MOCK_PRODUCTS = [
-  { id: 1, name: "Kain Batik Tulis Motif Mega Mendung Premium", price: 450000, rating: 5.0, sold: 48, image: "/product-batik.png", category: "Fashion" },
-  { id: 2, name: "Mangkuk Keramik Handmade Motif Tradisional", price: 125000, rating: 4.9, sold: 120, image: "/product-keramik.png", category: "Kerajinan" },
-  { id: 3, name: "Kopi Arabika Gayo Single Origin 250g", price: 85000, rating: 4.8, sold: 340, image: "/product-kopi.png", category: "Kuliner" },
-  { id: 4, name: "Dompet Kulit Sapi Asli Cognac Brown", price: 210000, rating: 5.0, sold: 50, image: "/product-dompet.png", category: "Fashion" },
-  { id: 5, name: "Paket Skincare Alami Ekstrak Kunyit", price: 175000, rating: 4.3, sold: 80, image: "/product-skincare.png", category: "Kecantikan" },
-  { id: 6, name: "Gelas Keramik Motif Batik Indigo", price: 75000, rating: 4.8, sold: 120, image: "/similar-1.png", category: "Kerajinan" },
-  { id: 7, name: "Piring Dekoratif Batik Parang Cokelat", price: 95000, rating: 5.0, sold: 45, image: "/similar-2.png", category: "Kerajinan" },
-  { id: 8, name: "Set Wadah Sambel Keramik Handmade", price: 120000, rating: 4.7, sold: 80, image: "/similar-3.png", category: "Kerajinan" },
-];
 
 const CATEGORIES = ["Semua", "Fashion", "Kerajinan", "Kuliner", "Kecantikan", "Jasa"];
 const SORT_OPTIONS = [{ value: "relevansi", label: "Relevansi" }, { value: "harga-asc", label: "Harga Terendah" }, { value: "harga-desc", label: "Harga Tertinggi" }, { value: "rating", label: "Rating Tertinggi" }];
@@ -29,20 +22,35 @@ function fmtPrice(p: number) { return `Rp ${p.toLocaleString("id-ID")}`; }
 
 function SearchContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const query = searchParams.get("q") || "";
+  const [products, setProducts] = useState<ProductCard[]>([]);
+  const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState("relevansi");
   const [selectedCats, setSelectedCats] = useState<string[]>([]);
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [minRating, setMinRating] = useState(0);
 
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const data = query
+        ? await productService.searchProducts(query, 100)
+        : await productService.getProducts({ publicOnly: true, limit: 100, includeImages: true });
+      const stats = await productService.getProductStats(data.map((p) => p.id_produk));
+      setProducts(data.map((p) => productToCard(p, stats[p.id_produk])));
+      setLoading(false);
+    }
+    load();
+  }, [query]);
+
   function toggleCat(cat: string) {
     if (cat === "Semua") { setSelectedCats([]); return; }
     setSelectedCats((prev) => prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]);
   }
 
-  const filtered = MOCK_PRODUCTS.filter((p) => {
-    if (query && !p.name.toLowerCase().includes(query.toLowerCase()) && !p.category.toLowerCase().includes(query.toLowerCase())) return false;
+  const filtered = products.filter((p) => {
     if (selectedCats.length > 0 && !selectedCats.includes(p.category)) return false;
     if (minPrice && p.price < Number(minPrice)) return false;
     if (maxPrice && p.price > Number(maxPrice)) return false;
@@ -116,7 +124,9 @@ function SearchContent() {
               </div>
             </aside>
             <section>
-              {sorted.length === 0 ? (
+              {loading ? (
+                <div style={{ padding: 48, textAlign: "center", color: C.textMuted }}>Memuat produk...</div>
+              ) : sorted.length === 0 ? (
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "80px 24px", background: "white", border: `1.5px solid ${C.border}`, borderRadius: 12, textAlign: "center", gap: 16 }}>
                   <div style={{ width: 64, height: 64, borderRadius: "50%", background: C.primaryPale, display: "flex", alignItems: "center", justifyContent: "center" }}><Search size={28} color={C.primary} /></div>
                   <h3 style={{ fontSize: "1.125rem", fontWeight: 800, color: C.text, margin: 0 }}>Tidak Ada Hasil</h3>
@@ -126,9 +136,9 @@ function SearchContent() {
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 18 }}>
                   {sorted.map((p) => (
                     <article key={p.id} style={{ background: "white", border: `1.5px solid ${C.border}`, borderRadius: 12, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                      <Link href={`/produk/${p.id}`} style={{ textDecoration: "none" }}>
+                      <Link href={`/produk/${p.slug}`} style={{ textDecoration: "none" }}>
                         <div style={{ position: "relative", aspectRatio: "1", background: "#F6F4F0" }}>
-                          <Image src={p.image} alt={p.name} fill style={{ objectFit: "cover" }} sizes="220px" />
+                          <ProductGridImage src={p.image} alt={p.name} sizes="220px" />
                         </div>
                         <div style={{ padding: 14 }}>
                           <p style={{ fontSize: "0.65rem", fontWeight: 800, color: C.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 4px 0" }}>{p.category}</p>
@@ -140,7 +150,12 @@ function SearchContent() {
                         </div>
                       </Link>
                       <div style={{ padding: "0 14px 14px" }}>
-                        <button onClick={() => alert(`Ditambahkan: ${p.name}`)} style={{ width: "100%", height: 34, border: `1.5px solid ${C.primary}`, borderRadius: 6, background: "transparent", color: C.primary, fontWeight: 700, fontSize: "0.75rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontFamily: "inherit" }}>
+                        <button onClick={async () => {
+                          const user = authService.getCurrentUser();
+                          if (!user) { router.push("/masuk"); return; }
+                          const result = await cartService.addToCart(user.id_user, p.id, 1);
+                          alert(result.ok ? `Ditambahkan: ${p.name}` : (result.error || "Gagal menambahkan ke keranjang."));
+                        }} style={{ width: "100%", height: 34, border: `1.5px solid ${C.primary}`, borderRadius: 6, background: "transparent", color: C.primary, fontWeight: 700, fontSize: "0.75rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontFamily: "inherit" }}>
                           <ShoppingCart size={13} />Tambah ke Keranjang
                         </button>
                       </div>

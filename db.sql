@@ -1,14 +1,10 @@
 -- ============================================================
---  DATABASE SCHEMA - PELUM PROJECT (v2 - FIXED)
+--  DATABASE SCHEMA - PELUM PROJECT (v3)
 --  Platform: Supabase (PostgreSQL)
 --
---  PERBAIKAN:
---  1. Tambah nama_lengkap, no_telp, avatar di users
---  2. Tambah id_seller di order (1 order = 1 seller)
---  3. Hapus kolom retur duplikat di order (cukup tabel retur)
---  4. Tambah is_verified, deskripsi, logo_toko di seller
---  5. Tambah RLS policy untuk seller (lihat & proses order)
---  6. Tambah super_admin policy
+--  CARA PAKAI:
+--  • DB baru (reset total): uncomment bagian RESET di bawah, lalu jalankan seluruh file
+--  • DB sudah ada: jalankan bagian MIGRASI di akhir file saja
 -- ============================================================
 
 
@@ -16,11 +12,16 @@
 -- RESET: Drop semua tabel & enum lama (urutan terbalik)
 -- Jalankan ini HANYA jika mau reset total dari awal.
 -- ============================================================
+DROP TABLE IF EXISTS notifikasi      CASCADE;
+DROP TABLE IF EXISTS support_ticket  CASCADE;
+DROP TABLE IF EXISTS chat_message    CASCADE;
+DROP TABLE IF EXISTS chat_room       CASCADE;
 DROP TABLE IF EXISTS saldo_seller    CASCADE;
 DROP TABLE IF EXISTS pengiriman      CASCADE;
 DROP TABLE IF EXISTS payment         CASCADE;
 DROP TABLE IF EXISTS retur            CASCADE;
 DROP TABLE IF EXISTS review_toko     CASCADE;
+DROP TABLE IF EXISTS ikut_toko       CASCADE;
 DROP TABLE IF EXISTS order_item      CASCADE;
 DROP TABLE IF EXISTS "order"         CASCADE;
 DROP TABLE IF EXISTS cart_item       CASCADE;
@@ -33,6 +34,7 @@ DROP TABLE IF EXISTS alamat          CASCADE;
 DROP TABLE IF EXISTS users           CASCADE;
 DROP TABLE IF EXISTS super_admin     CASCADE;
 
+DROP TYPE IF EXISTS notif_type_enum;
 DROP TYPE IF EXISTS stat_saldo_enum;
 DROP TYPE IF EXISTS tipe_saldo_enum;
 DROP TYPE IF EXISTS stat_kirim_enum;
@@ -60,6 +62,7 @@ CREATE TYPE metod_pay_enum   AS ENUM ('transfer_bank', 'e_wallet', 'cod', 'qris'
 CREATE TYPE stat_kirim_enum  AS ENUM ('belum_dikirim', 'sedang_dikirim', 'sampai', 'gagal');
 CREATE TYPE tipe_saldo_enum  AS ENUM ('masuk', 'keluar');
 CREATE TYPE stat_saldo_enum  AS ENUM ('pending', 'sukses', 'gagal');
+CREATE TYPE notif_type_enum  AS ENUM ('order', 'payment', 'shipping', 'promo', 'system');
 
 
 -- ============================================================
@@ -160,6 +163,11 @@ CREATE TABLE produk (
     "desc"          TEXT,
     harga           NUMERIC(15, 2) NOT NULL CHECK (harga >= 0),
     berat           INT DEFAULT 0,                   -- berat dalam gram (untuk ongkir)
+    bahan           VARCHAR(200),                      -- detail: bahan produk
+    asal_produk     VARCHAR(200),                    -- detail: asal / lokasi
+    ketahanan       VARCHAR(200),                      -- detail: ketahanan / perawatan
+    info_tambahan   TEXT,                            -- paragraf info tambahan
+    varian          JSONB NOT NULL DEFAULT '[]',       -- [{ "label": "Warna", "values": ["Merah"] }]
     img             TEXT,                             -- gambar utama
     produk_stock    INT NOT NULL DEFAULT 0 CHECK (produk_stock >= 0),
     stat_produk     stat_produk_enum NOT NULL DEFAULT 'tersedia',
@@ -178,6 +186,7 @@ CREATE TABLE review (
     rating      SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
     komentar    TEXT,
     foto_review TEXT,                            -- URL foto lampiran review
+    id_order    UUID REFERENCES "order"(id_order) ON DELETE SET NULL,
     created_at  TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (id_user, id_produk)
 );
@@ -222,6 +231,7 @@ CREATE TABLE "order" (
     diskon          NUMERIC(15, 2) DEFAULT 0,        -- potongan voucher
     biaya_layanan   NUMERIC(15, 2) DEFAULT 0,        -- biaya layanan aplikasi
     stat_order      stat_order_enum NOT NULL DEFAULT 'pending',
+    tipe_pembayaran VARCHAR(20) DEFAULT 'digital',
     catatan         TEXT,
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     updated_at      TIMESTAMPTZ DEFAULT NOW()
@@ -250,6 +260,18 @@ CREATE TABLE review_toko (
     id_order        UUID REFERENCES "order"(id_order) ON DELETE SET NULL,
     rating          SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
     komentar        TEXT,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (id_user, id_seller)
+);
+
+
+-- ============================================================
+-- TABLE: ikut_toko (pengikut toko)
+-- ============================================================
+CREATE TABLE ikut_toko (
+    id_ikut         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id_user         UUID NOT NULL REFERENCES users(id_user) ON DELETE CASCADE,
+    id_seller       UUID NOT NULL REFERENCES seller(id_seller) ON DELETE CASCADE,
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (id_user, id_seller)
 );
@@ -319,6 +341,34 @@ CREATE TABLE saldo_seller (
 
 
 -- ============================================================
+-- TABLE: support_ticket (kontak / bantuan)
+-- ============================================================
+CREATE TABLE support_ticket (
+    id_ticket    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id_user      UUID REFERENCES users(id_user) ON DELETE SET NULL,
+    subject      VARCHAR(255) NOT NULL,
+    message      TEXT NOT NULL,
+    created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+-- ============================================================
+-- TABLE: notifikasi
+-- ============================================================
+CREATE TABLE notifikasi (
+    id_notifikasi UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id_user       UUID NOT NULL REFERENCES users(id_user) ON DELETE CASCADE,
+    judul         VARCHAR(200) NOT NULL,
+    pesan         TEXT NOT NULL,
+    tipe          notif_type_enum NOT NULL DEFAULT 'system',
+    link          VARCHAR(500),
+    id_order      UUID REFERENCES "order"(id_order) ON DELETE SET NULL,
+    is_read       BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+-- ============================================================
 -- INDEXES
 -- ============================================================
 CREATE INDEX idx_seller_user         ON seller(id_user);
@@ -335,6 +385,8 @@ CREATE INDEX idx_order_stat          ON "order"(stat_order);
 CREATE INDEX idx_order_item_order    ON order_item(id_order);
 CREATE INDEX idx_review_toko_seller  ON review_toko(id_seller);
 CREATE INDEX idx_review_toko_user    ON review_toko(id_user);
+CREATE INDEX idx_ikut_toko_seller    ON ikut_toko(id_seller);
+CREATE INDEX idx_ikut_toko_user      ON ikut_toko(id_user);
 CREATE INDEX idx_retur_user          ON retur(id_user);
 CREATE INDEX idx_retur_order_item    ON retur(id_order_item);
 CREATE INDEX idx_payment_order       ON payment(id_order);
@@ -344,6 +396,9 @@ CREATE INDEX idx_pengiriman_order    ON pengiriman(id_order);
 CREATE INDEX idx_pengiriman_stat     ON pengiriman(stat_kirim);
 CREATE INDEX idx_saldo_seller        ON saldo_seller(id_seller);
 CREATE INDEX idx_saldo_tipe          ON saldo_seller(tipe);
+CREATE INDEX idx_notifikasi_user      ON notifikasi(id_user);
+CREATE INDEX idx_notifikasi_user_read ON notifikasi(id_user, is_read);
+CREATE INDEX idx_notifikasi_created   ON notifikasi(created_at DESC);
 
 
 -- ============================================================
@@ -375,200 +430,259 @@ CREATE TRIGGER trg_retur_updated_at
 
 -- ============================================================
 -- ROW LEVEL SECURITY (RLS)
+-- Aplikasi memakai anon key + auth custom (bukan Supabase Auth)
 -- ============================================================
--- ALTER TABLE super_admin     ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE users           ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE seller          ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE alamat          ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE kategori        ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE produk          ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE review          ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE cart            ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE cart_item       ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE "order"         ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE order_item      ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE review_toko     ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE retur           ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE payment         ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE pengiriman      ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE saldo_seller    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE users           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE seller          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE alamat          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE kategori        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE produk          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE review          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cart            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cart_item       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "order"         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE order_item      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE review_toko     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ikut_toko       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE retur           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payment         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pengiriman      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE saldo_seller    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE support_ticket  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notifikasi      ENABLE ROW LEVEL SECURITY;
 
 
 -- ============================================================
 -- RLS POLICIES
 -- ============================================================
 
--- Super Admin (akses via service_role key di backend,
--- tapi tetap buat policy untuk safety)
-CREATE POLICY "Super admin full access"
-    ON super_admin FOR ALL USING (true);
+-- USERS
+DROP POLICY IF EXISTS "Users can view own data" ON users;
+DROP POLICY IF EXISTS "Users can update own data" ON users;
+DROP POLICY IF EXISTS "Allow public register" ON users;
+CREATE POLICY "Allow public register"
+    ON users FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow public read users" ON users;
+CREATE POLICY "Allow public read users"
+    ON users FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow anon update users" ON users;
+CREATE POLICY "Allow anon update users"
+    ON users FOR UPDATE USING (true) WITH CHECK (true);
 
--- Users
-CREATE POLICY "Users can view own data"
-    ON users FOR SELECT USING (auth.uid() = id_user);
-CREATE POLICY "Users can update own data"
-    ON users FOR UPDATE USING (auth.uid() = id_user);
-
--- Seller (public bisa lihat profil toko)
+-- SELLER
+DROP POLICY IF EXISTS "Public can view seller profiles" ON seller;
 CREATE POLICY "Public can view seller profiles"
     ON seller FOR SELECT USING (true);
-CREATE POLICY "Seller can update own profile"
-    ON seller FOR UPDATE USING (id_user = auth.uid());
-CREATE POLICY "Users can register as seller"
-    ON seller FOR INSERT WITH CHECK (id_user = auth.uid());
+DROP POLICY IF EXISTS "Seller can update own profile" ON seller;
+DROP POLICY IF EXISTS "Users can register as seller" ON seller;
+DROP POLICY IF EXISTS "Allow public create seller" ON seller;
+CREATE POLICY "Allow public create seller"
+    ON seller FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon update seller" ON seller;
+CREATE POLICY "Allow anon update seller"
+    ON seller FOR UPDATE USING (true) WITH CHECK (true);
 
--- Alamat
-CREATE POLICY "Users can manage own alamat"
-    ON alamat FOR ALL USING (id_user = auth.uid());
+-- ALAMAT
+DROP POLICY IF EXISTS "Users can manage own alamat" ON alamat;
+DROP POLICY IF EXISTS "Allow anon insert alamat" ON alamat;
+CREATE POLICY "Allow anon insert alamat"
+    ON alamat FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon read alamat" ON alamat;
+CREATE POLICY "Allow anon read alamat"
+    ON alamat FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow anon update alamat" ON alamat;
+CREATE POLICY "Allow anon update alamat"
+    ON alamat FOR UPDATE USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon delete alamat" ON alamat;
+CREATE POLICY "Allow anon delete alamat"
+    ON alamat FOR DELETE USING (true);
 
--- Kategori (public read)
+-- KATEGORI
+DROP POLICY IF EXISTS "Public can view kategori" ON kategori;
 CREATE POLICY "Public can view kategori"
     ON kategori FOR SELECT USING (true);
 
--- Produk (public bisa lihat yg tersedia)
+-- PRODUK
+DROP POLICY IF EXISTS "Public can view available products" ON produk;
 CREATE POLICY "Public can view available products"
     ON produk FOR SELECT USING (stat_produk = 'tersedia');
-CREATE POLICY "Seller can manage own products"
-    ON produk FOR ALL USING (
-        id_seller IN (SELECT id_seller FROM seller WHERE id_user = auth.uid())
-    );
+DROP POLICY IF EXISTS "Seller can manage own products" ON produk;
+DROP POLICY IF EXISTS "Allow anon read all products" ON produk;
+CREATE POLICY "Allow anon read all products"
+    ON produk FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow anon insert product" ON produk;
+CREATE POLICY "Allow anon insert product"
+    ON produk FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon update product" ON produk;
+CREATE POLICY "Allow anon update product"
+    ON produk FOR UPDATE USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon delete product" ON produk;
+CREATE POLICY "Allow anon delete product"
+    ON produk FOR DELETE USING (true);
 
--- Review (public bisa lihat)
+-- REVIEW
+DROP POLICY IF EXISTS "Public can view reviews" ON review;
 CREATE POLICY "Public can view reviews"
     ON review FOR SELECT USING (true);
-CREATE POLICY "Users can manage own reviews"
-    ON review FOR ALL USING (id_user = auth.uid());
+DROP POLICY IF EXISTS "Users can manage own reviews" ON review;
+DROP POLICY IF EXISTS "Allow anon read review" ON review;
+CREATE POLICY "Allow anon read review"
+    ON review FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow anon insert review" ON review;
+CREATE POLICY "Allow anon insert review"
+    ON review FOR INSERT WITH CHECK (true);
 
--- Cart
-CREATE POLICY "Users can access own cart"
-    ON cart FOR ALL USING (id_user = auth.uid());
-CREATE POLICY "Users can access own cart items"
-    ON cart_item FOR ALL USING (
-        id_cart IN (SELECT id_cart FROM cart WHERE id_user = auth.uid())
-    );
+-- CART
+DROP POLICY IF EXISTS "Users can access own cart" ON cart;
+DROP POLICY IF EXISTS "Allow anon cart" ON cart;
+CREATE POLICY "Allow anon cart"
+    ON cart FOR ALL USING (true) WITH CHECK (true);
 
--- Order (BUYER bisa lihat order sendiri, SELLER bisa lihat & update order masuk)
-CREATE POLICY "Buyer can view own orders"
-    ON "order" FOR SELECT USING (id_user = auth.uid());
-CREATE POLICY "Buyer can create order"
-    ON "order" FOR INSERT WITH CHECK (id_user = auth.uid());
-CREATE POLICY "Seller can view incoming orders"
-    ON "order" FOR SELECT USING (
-        id_seller IN (SELECT id_seller FROM seller WHERE id_user = auth.uid())
-    );
-CREATE POLICY "Seller can update order status"
-    ON "order" FOR UPDATE USING (
-        id_seller IN (SELECT id_seller FROM seller WHERE id_user = auth.uid())
-    );
+-- CART_ITEM
+DROP POLICY IF EXISTS "Users can access own cart items" ON cart_item;
+DROP POLICY IF EXISTS "Allow anon cart item" ON cart_item;
+CREATE POLICY "Allow anon cart item"
+    ON cart_item FOR ALL USING (true) WITH CHECK (true);
 
--- Order Item
-CREATE POLICY "Buyer can view own order items"
-    ON order_item FOR SELECT USING (
-        id_order IN (SELECT id_order FROM "order" WHERE id_user = auth.uid())
-    );
-CREATE POLICY "Buyer can insert order items"
-    ON order_item FOR INSERT WITH CHECK (
-        id_order IN (SELECT id_order FROM "order" WHERE id_user = auth.uid())
-    );
-CREATE POLICY "Seller can view order items"
-    ON order_item FOR SELECT USING (
-        id_order IN (
-            SELECT id_order FROM "order"
-            WHERE id_seller IN (SELECT id_seller FROM seller WHERE id_user = auth.uid())
-        )
-    );
+-- ORDER
+DROP POLICY IF EXISTS "Buyer can view own orders" ON "order";
+DROP POLICY IF EXISTS "Buyer can create order" ON "order";
+DROP POLICY IF EXISTS "Seller can view incoming orders" ON "order";
+DROP POLICY IF EXISTS "Seller can update order status" ON "order";
+DROP POLICY IF EXISTS "Allow anon read orders" ON "order";
+CREATE POLICY "Allow anon read orders"
+    ON "order" FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow anon insert order" ON "order";
+CREATE POLICY "Allow anon insert order"
+    ON "order" FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon update order" ON "order";
+CREATE POLICY "Allow anon update order"
+    ON "order" FOR UPDATE USING (true) WITH CHECK (true);
 
--- Review Toko
+-- ORDER_ITEM
+DROP POLICY IF EXISTS "Buyer can view own order items" ON order_item;
+DROP POLICY IF EXISTS "Buyer can insert order items" ON order_item;
+DROP POLICY IF EXISTS "Seller can view order items" ON order_item;
+DROP POLICY IF EXISTS "Allow anon read order items" ON order_item;
+CREATE POLICY "Allow anon read order items"
+    ON order_item FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow anon insert order item" ON order_item;
+CREATE POLICY "Allow anon insert order item"
+    ON order_item FOR INSERT WITH CHECK (true);
+
+-- REVIEW_TOKO
+DROP POLICY IF EXISTS "Public can view store reviews" ON review_toko;
 CREATE POLICY "Public can view store reviews"
     ON review_toko FOR SELECT USING (true);
-CREATE POLICY "Users can manage own store reviews"
-    ON review_toko FOR ALL USING (id_user = auth.uid());
+DROP POLICY IF EXISTS "Users can manage own store reviews" ON review_toko;
+DROP POLICY IF EXISTS "Allow anon insert review_toko" ON review_toko;
+CREATE POLICY "Allow anon insert review_toko"
+    ON review_toko FOR INSERT WITH CHECK (true);
 
--- Retur
-CREATE POLICY "Buyer can view own returns"
-    ON retur FOR SELECT USING (id_user = auth.uid());
-CREATE POLICY "Buyer can create return"
-    ON retur FOR INSERT WITH CHECK (id_user = auth.uid());
-CREATE POLICY "Seller can view returns for their orders"
-    ON retur FOR SELECT USING (
-        id_order_item IN (
-            SELECT oi.id_order_item FROM order_item oi
-            JOIN "order" o ON o.id_order = oi.id_order
-            WHERE o.id_seller IN (SELECT id_seller FROM seller WHERE id_user = auth.uid())
-        )
-    );
-CREATE POLICY "Seller can update return status"
-    ON retur FOR UPDATE USING (
-        id_order_item IN (
-            SELECT oi.id_order_item FROM order_item oi
-            JOIN "order" o ON o.id_order = oi.id_order
-            WHERE o.id_seller IN (SELECT id_seller FROM seller WHERE id_user = auth.uid())
-        )
-    );
+-- IKUT_TOKO
+DROP POLICY IF EXISTS "Public can view store followers" ON ikut_toko;
+CREATE POLICY "Public can view store followers"
+    ON ikut_toko FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow anon insert ikut_toko" ON ikut_toko;
+CREATE POLICY "Allow anon insert ikut_toko"
+    ON ikut_toko FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon delete ikut_toko" ON ikut_toko;
+CREATE POLICY "Allow anon delete ikut_toko"
+    ON ikut_toko FOR DELETE USING (true);
 
--- Payment
-CREATE POLICY "Buyer can view own payments"
-    ON payment FOR SELECT USING (
-        id_order IN (SELECT id_order FROM "order" WHERE id_user = auth.uid())
-    );
-CREATE POLICY "Buyer can create payment"
-    ON payment FOR INSERT WITH CHECK (
-        id_order IN (SELECT id_order FROM "order" WHERE id_user = auth.uid())
-    );
-CREATE POLICY "Seller can view payments for their orders"
-    ON payment FOR SELECT USING (
-        id_order IN (
-            SELECT id_order FROM "order"
-            WHERE id_seller IN (SELECT id_seller FROM seller WHERE id_user = auth.uid())
-        )
-    );
+-- RETUR
+DROP POLICY IF EXISTS "Buyer can view own returns" ON retur;
+DROP POLICY IF EXISTS "Buyer can create return" ON retur;
+DROP POLICY IF EXISTS "Seller can view returns for their orders" ON retur;
+DROP POLICY IF EXISTS "Seller can update return status" ON retur;
+DROP POLICY IF EXISTS "Allow anon read retur" ON retur;
+CREATE POLICY "Allow anon read retur"
+    ON retur FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow anon insert retur" ON retur;
+CREATE POLICY "Allow anon insert retur"
+    ON retur FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon update retur" ON retur;
+CREATE POLICY "Allow anon update retur"
+    ON retur FOR UPDATE USING (true) WITH CHECK (true);
 
--- Pengiriman
-CREATE POLICY "Buyer can view own shipment"
-    ON pengiriman FOR SELECT USING (
-        id_order IN (SELECT id_order FROM "order" WHERE id_user = auth.uid())
-    );
-CREATE POLICY "Seller can manage shipment"
-    ON pengiriman FOR ALL USING (
-        id_order IN (
-            SELECT id_order FROM "order"
-            WHERE id_seller IN (SELECT id_seller FROM seller WHERE id_user = auth.uid())
-        )
-    );
+-- PAYMENT
+DROP POLICY IF EXISTS "Buyer can view own payments" ON payment;
+DROP POLICY IF EXISTS "Buyer can create payment" ON payment;
+DROP POLICY IF EXISTS "Seller can view payments for their orders" ON payment;
+DROP POLICY IF EXISTS "Allow anon read payment" ON payment;
+CREATE POLICY "Allow anon read payment"
+    ON payment FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow anon insert payment" ON payment;
+CREATE POLICY "Allow anon insert payment"
+    ON payment FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon update payment" ON payment;
+CREATE POLICY "Allow anon update payment"
+    ON payment FOR UPDATE USING (true) WITH CHECK (true);
 
--- Saldo Seller
-CREATE POLICY "Seller can view own saldo"
-    ON saldo_seller FOR SELECT USING (
-        id_seller IN (SELECT id_seller FROM seller WHERE id_user = auth.uid())
-    );
+-- PENGIRIMAN
+DROP POLICY IF EXISTS "Buyer can view own shipment" ON pengiriman;
+DROP POLICY IF EXISTS "Seller can manage shipment" ON pengiriman;
+DROP POLICY IF EXISTS "Allow anon read pengiriman" ON pengiriman;
+CREATE POLICY "Allow anon read pengiriman"
+    ON pengiriman FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow anon insert pengiriman" ON pengiriman;
+CREATE POLICY "Allow anon insert pengiriman"
+    ON pengiriman FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon update pengiriman" ON pengiriman;
+CREATE POLICY "Allow anon update pengiriman"
+    ON pengiriman FOR UPDATE USING (true) WITH CHECK (true);
+
+-- SALDO_SELLER
+DROP POLICY IF EXISTS "Seller can view own saldo" ON saldo_seller;
+DROP POLICY IF EXISTS "Allow anon read saldo" ON saldo_seller;
+CREATE POLICY "Allow anon read saldo"
+    ON saldo_seller FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow anon insert saldo" ON saldo_seller;
+CREATE POLICY "Allow anon insert saldo"
+    ON saldo_seller FOR INSERT WITH CHECK (true);
+
+-- SUPPORT_TICKET
+DROP POLICY IF EXISTS "Users can insert support tickets" ON support_ticket;
+DROP POLICY IF EXISTS "Users can view own support tickets" ON support_ticket;
+DROP POLICY IF EXISTS "Allow anon insert support_ticket" ON support_ticket;
+CREATE POLICY "Allow anon insert support_ticket"
+    ON support_ticket FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon read support_ticket" ON support_ticket;
+CREATE POLICY "Allow anon read support_ticket"
+    ON support_ticket FOR SELECT USING (true);
+
+-- NOTIFIKASI
+DROP POLICY IF EXISTS "Allow anon read notifikasi" ON notifikasi;
+CREATE POLICY "Allow anon read notifikasi"
+    ON notifikasi FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow anon insert notifikasi" ON notifikasi;
+CREATE POLICY "Allow anon insert notifikasi"
+    ON notifikasi FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon update notifikasi" ON notifikasi;
+CREATE POLICY "Allow anon update notifikasi"
+    ON notifikasi FOR UPDATE USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon delete notifikasi" ON notifikasi;
+CREATE POLICY "Allow anon delete notifikasi"
+    ON notifikasi FOR DELETE USING (true);
 
 
 -- ============================================================
--- TABLE: chat_room
+-- MIGRASI (DB sudah ada — jalankan bagian ini saja di SQL Editor)
+-- Aman dijalankan ulang (idempotent)
 -- ============================================================
-CREATE TABLE chat_room (
-    id_room      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    id_buyer     UUID NOT NULL REFERENCES users(id_user) ON DELETE CASCADE,
-    id_seller    UUID NOT NULL REFERENCES seller(id_seller) ON DELETE CASCADE,
-    created_at   TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE (id_buyer, id_seller)
-);
 
--- ============================================================
--- TABLE: chat_message
--- ============================================================
-CREATE TABLE chat_message (
-    id_message   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    id_room      UUID NOT NULL REFERENCES chat_room(id_room) ON DELETE CASCADE,
-    sender_id    UUID NOT NULL,
-    text         TEXT NOT NULL,
-    created_at   TIMESTAMPTZ DEFAULT NOW()
-);
+-- Hapus fitur chat toko (sudah tidak dipakai)
+DROP TABLE IF EXISTS chat_message CASCADE;
+DROP TABLE IF EXISTS chat_room CASCADE;
 
--- ============================================================
--- TABLE: support_ticket
--- ============================================================
-CREATE TABLE support_ticket (
+-- Tabel baru jika belum ada
+DO $$ BEGIN
+  CREATE TYPE notif_type_enum AS ENUM ('order', 'payment', 'shipping', 'promo', 'system');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE TABLE IF NOT EXISTS support_ticket (
     id_ticket    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     id_user      UUID REFERENCES users(id_user) ON DELETE SET NULL,
     subject      VARCHAR(255) NOT NULL,
@@ -576,44 +690,225 @@ CREATE TABLE support_ticket (
     created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Enable RLS
--- ALTER TABLE chat_room       ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE chat_message    ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE support_ticket  ENABLE ROW LEVEL SECURITY;
+CREATE TABLE IF NOT EXISTS notifikasi (
+    id_notifikasi UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id_user       UUID NOT NULL REFERENCES users(id_user) ON DELETE CASCADE,
+    judul         VARCHAR(200) NOT NULL,
+    pesan         TEXT NOT NULL,
+    tipe          notif_type_enum NOT NULL DEFAULT 'system',
+    link          VARCHAR(500),
+    id_order      UUID REFERENCES "order"(id_order) ON DELETE SET NULL,
+    is_read       BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at    TIMESTAMPTZ DEFAULT NOW()
+);
 
--- Policies for chat_room
-CREATE POLICY "Users can view own chat rooms"
-    ON chat_room FOR SELECT USING (
-        auth.uid() = id_buyer OR id_seller IN (SELECT id_seller FROM seller WHERE id_user = auth.uid())
-    );
-CREATE POLICY "Users can create own chat rooms"
-    ON chat_room FOR INSERT WITH CHECK (
-        auth.uid() = id_buyer OR id_seller IN (SELECT id_seller FROM seller WHERE id_user = auth.uid())
-    );
+CREATE INDEX IF NOT EXISTS idx_notifikasi_user      ON notifikasi(id_user);
+CREATE INDEX IF NOT EXISTS idx_notifikasi_user_read ON notifikasi(id_user, is_read);
+CREATE INDEX IF NOT EXISTS idx_notifikasi_created   ON notifikasi(created_at DESC);
 
--- Policies for chat_message
-CREATE POLICY "Users can view messages in own rooms"
-    ON chat_message FOR SELECT USING (
-        id_room IN (
-            SELECT id_room FROM chat_room 
-            WHERE id_buyer = auth.uid() OR id_seller IN (SELECT id_seller FROM seller WHERE id_user = auth.uid())
-        )
-    );
-CREATE POLICY "Users can insert messages in own rooms"
-    ON chat_message FOR INSERT WITH CHECK (
-        sender_id = auth.uid() AND id_room IN (
-            SELECT id_room FROM chat_room 
-            WHERE id_buyer = auth.uid() OR id_seller IN (SELECT id_seller FROM seller WHERE id_user = auth.uid())
-        )
-    );
+ALTER TABLE support_ticket ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notifikasi ENABLE ROW LEVEL SECURITY;
 
--- Policies for support_ticket
-CREATE POLICY "Users can insert support tickets"
-    ON support_ticket FOR INSERT WITH CHECK (
-        id_user = auth.uid() OR id_user IS NULL
-    );
-CREATE POLICY "Users can view own support tickets"
-    ON support_ticket FOR SELECT USING (
-        id_user = auth.uid()
-    );
+-- Policy migrasi (ulang policy di atas jika perlu)
+DROP POLICY IF EXISTS "Allow anon insert support_ticket" ON support_ticket;
+CREATE POLICY "Allow anon insert support_ticket"
+    ON support_ticket FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon read support_ticket" ON support_ticket;
+CREATE POLICY "Allow anon read support_ticket"
+    ON support_ticket FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Allow anon read notifikasi" ON notifikasi;
+CREATE POLICY "Allow anon read notifikasi"
+    ON notifikasi FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow anon insert notifikasi" ON notifikasi;
+CREATE POLICY "Allow anon insert notifikasi"
+    ON notifikasi FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon update notifikasi" ON notifikasi;
+CREATE POLICY "Allow anon update notifikasi"
+    ON notifikasi FOR UPDATE USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon delete notifikasi" ON notifikasi;
+CREATE POLICY "Allow anon delete notifikasi"
+    ON notifikasi FOR DELETE USING (true);
+
+-- Cart & cart_item (perbaiki error keranjang / RLS)
+ALTER TABLE cart ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cart_item ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can access own cart" ON cart;
+DROP POLICY IF EXISTS "Allow anon cart" ON cart;
+CREATE POLICY "Allow anon cart"
+    ON cart FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Users can access own cart items" ON cart_item;
+DROP POLICY IF EXISTS "Allow anon cart item" ON cart_item;
+CREATE POLICY "Allow anon cart item"
+    ON cart_item FOR ALL USING (true) WITH CHECK (true);
+
+-- Kolom detail produk & varian (jika belum ada)
+ALTER TABLE produk ADD COLUMN IF NOT EXISTS bahan VARCHAR(200);
+ALTER TABLE produk ADD COLUMN IF NOT EXISTS asal_produk VARCHAR(200);
+ALTER TABLE produk ADD COLUMN IF NOT EXISTS ketahanan VARCHAR(200);
+ALTER TABLE produk ADD COLUMN IF NOT EXISTS info_tambahan TEXT;
+ALTER TABLE produk ADD COLUMN IF NOT EXISTS varian JSONB NOT NULL DEFAULT '[]';
+
+-- Chat pengiriman (setelah pembayaran digital)
+CREATE TABLE IF NOT EXISTS order_chat (
+    id_chat    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id_order   UUID NOT NULL REFERENCES "order"(id_order) ON DELETE CASCADE,
+    id_user    UUID NOT NULL REFERENCES users(id_user) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (id_order)
+);
+
+CREATE TABLE IF NOT EXISTS order_chat_message (
+    id_message   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id_chat      UUID NOT NULL REFERENCES order_chat(id_chat) ON DELETE CASCADE,
+    sender_role  VARCHAR(20) NOT NULL CHECK (sender_role IN ('admin', 'customer')),
+    sender_id    UUID REFERENCES users(id_user) ON DELETE SET NULL,
+    text         TEXT NOT NULL,
+    created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_chat_user    ON order_chat(id_user);
+CREATE INDEX IF NOT EXISTS idx_order_chat_message ON order_chat_message(id_chat, created_at);
+
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS tipe_pembayaran VARCHAR(20) DEFAULT 'digital';
+
+ALTER TABLE order_chat ENABLE ROW LEVEL SECURITY;
+ALTER TABLE order_chat_message ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow anon order_chat" ON order_chat;
+CREATE POLICY "Allow anon order_chat"
+    ON order_chat FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow anon order_chat_message" ON order_chat_message;
+CREATE POLICY "Allow anon order_chat_message"
+    ON order_chat_message FOR ALL USING (true) WITH CHECK (true);
+
+-- Review terkait pesanan + chat return ke admin
+ALTER TABLE review ADD COLUMN IF NOT EXISTS id_order UUID REFERENCES "order"(id_order) ON DELETE SET NULL;
+
+CREATE TABLE IF NOT EXISTS return_chat (
+    id_chat    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id_retur   UUID NOT NULL REFERENCES retur(id_retur) ON DELETE CASCADE,
+    id_user    UUID NOT NULL REFERENCES users(id_user) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (id_retur)
+);
+
+CREATE TABLE IF NOT EXISTS return_chat_message (
+    id_message   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id_chat      UUID NOT NULL REFERENCES return_chat(id_chat) ON DELETE CASCADE,
+    sender_role  VARCHAR(20) NOT NULL CHECK (sender_role IN ('admin', 'customer')),
+    sender_id    UUID REFERENCES users(id_user) ON DELETE SET NULL,
+    text         TEXT NOT NULL,
+    created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_return_chat_user ON return_chat(id_user);
+CREATE INDEX IF NOT EXISTS idx_return_chat_message ON return_chat_message(id_chat, created_at);
+
+ALTER TABLE return_chat ENABLE ROW LEVEL SECURITY;
+ALTER TABLE return_chat_message ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow anon return_chat" ON return_chat;
+CREATE POLICY "Allow anon return_chat"
+    ON return_chat FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow anon return_chat_message" ON return_chat_message;
+CREATE POLICY "Allow anon return_chat_message"
+    ON return_chat_message FOR ALL USING (true) WITH CHECK (true);
+
+-- Chat umum pelanggan ↔ admin (Customer Service manusia)
+CREATE TABLE IF NOT EXISTS support_chat (
+    id_chat    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id_user    UUID NOT NULL REFERENCES users(id_user) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (id_user)
+);
+
+CREATE TABLE IF NOT EXISTS support_chat_message (
+    id_message   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id_chat      UUID NOT NULL REFERENCES support_chat(id_chat) ON DELETE CASCADE,
+    sender_role  VARCHAR(20) NOT NULL CHECK (sender_role IN ('admin', 'customer')),
+    sender_id    UUID REFERENCES users(id_user) ON DELETE SET NULL,
+    text         TEXT NOT NULL,
+    created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_support_chat_user ON support_chat(id_user);
+CREATE INDEX IF NOT EXISTS idx_support_chat_message ON support_chat_message(id_chat, created_at);
+
+ALTER TABLE support_chat ENABLE ROW LEVEL SECURITY;
+ALTER TABLE support_chat_message ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow anon support_chat" ON support_chat;
+CREATE POLICY "Allow anon support_chat"
+    ON support_chat FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow anon support_chat_message" ON support_chat_message;
+CREATE POLICY "Allow anon support_chat_message"
+    ON support_chat_message FOR ALL USING (true) WITH CHECK (true);
+
+-- Optimasi query produk (listing tanpa baca kolom img/varian/deskripsi penuh)
+ALTER TABLE produk ADD COLUMN IF NOT EXISTS cover_img VARCHAR(2048);
+CREATE INDEX IF NOT EXISTS idx_produk_created_at ON produk(created_at DESC);
+
+-- Backfill cover_img dari URL gambar yang sudah ada (skip base64)
+UPDATE produk
+SET cover_img = CASE
+    WHEN img IS NULL OR img = '' THEN NULL
+    WHEN img LIKE 'data:%' THEN NULL
+    WHEN img LIKE 'http%' OR img LIKE '/%' THEN left(img, 2048)
+    WHEN img LIKE '[%' THEN (
+        SELECT left(value, 2048)
+        FROM jsonb_array_elements_text(img::jsonb) AS t(value)
+        WHERE value NOT LIKE 'data:%' AND (value LIKE 'http%' OR value LIKE '/%')
+        LIMIT 1
+    )
+    ELSE NULL
+END
+WHERE cover_img IS NULL;
+
+-- Pengikut toko (ikut toko)
+CREATE TABLE IF NOT EXISTS ikut_toko (
+    id_ikut         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id_user         UUID NOT NULL REFERENCES users(id_user) ON DELETE CASCADE,
+    id_seller       UUID NOT NULL REFERENCES seller(id_seller) ON DELETE CASCADE,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (id_user, id_seller)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ikut_toko_seller ON ikut_toko(id_seller);
+CREATE INDEX IF NOT EXISTS idx_ikut_toko_user   ON ikut_toko(id_user);
+
+ALTER TABLE ikut_toko ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public can view store followers" ON ikut_toko;
+CREATE POLICY "Public can view store followers"
+    ON ikut_toko FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow anon insert ikut_toko" ON ikut_toko;
+CREATE POLICY "Allow anon insert ikut_toko"
+    ON ikut_toko FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow anon delete ikut_toko" ON ikut_toko;
+CREATE POLICY "Allow anon delete ikut_toko"
+    ON ikut_toko FOR DELETE USING (true);
+
+NOTIFY pgrst, 'reload schema';
+
+-- Akun admin default (login: admin@linkproductive.com / admin123)
+INSERT INTO users (id_user, username, password, email, nama_lengkap, role)
+VALUES (
+    'a0000001-0000-4000-8000-000000000001'::uuid,
+    'admin_pelum',
+    'admin123',
+    'admin@linkproductive.com',
+    'Administrator Pelataran UMKM',
+    'admin'
+)
+ON CONFLICT (email) DO UPDATE SET
+    password   = EXCLUDED.password,
+    role       = 'admin',
+    username   = EXCLUDED.username,
+    nama_lengkap = EXCLUDED.nama_lengkap;
 

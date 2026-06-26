@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { Package, Truck, CheckCircle2, X, MapPin, AlertCircle } from "lucide-react";
+import { Package, Truck, CheckCircle2, X, MapPin, AlertCircle, MessageCircle } from "lucide-react";
+import Link from "next/link";
 import { adminService, type AdminShipmentOrder, type AdminShipStatus } from "@/backend/adminService";
 import { shippingService } from "@/backend/shippingService";
+import { getPaymentBadgeClass } from "@/lib/checkoutConstants";
 
 const COURIERS = ["JNE", "J&T Express", "SiCepat", "Gosend"];
 
@@ -149,7 +151,14 @@ export default function AdminPengirimanPage() {
                     <span className="font-bold text-[#1F1B18]">{order.id}</span>
                     <span>•</span>
                     <span>{order.date}</span>
+                    <span>•</span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${getPaymentBadgeClass(order.paymentKind)}`}
+                    >
+                      {order.paymentLabel}
+                    </span>
                   </div>
+                  <p className="text-[10px] text-[#8E8680]">{order.paymentDesc}</p>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <p className="text-xs uppercase font-bold text-[#8E8680] tracking-wider mb-0.5">
@@ -189,14 +198,28 @@ export default function AdminPengirimanPage() {
                   )}
                 </div>
                 <div className="flex-shrink-0">
-                  {order.status === "Perlu Dikirim" && (
-                    <button
-                      onClick={() => openModal(order)}
-                      className="flex items-center gap-2 px-5 py-2.5 bg-[#1D4ED8] text-white font-bold text-xs rounded-lg hover:bg-blue-700 transition"
-                    >
-                      <Truck size={14} />
-                      Input Resi
-                    </button>
+                  {order.status === "Perlu Dikirim" && order.paymentKind === "pickup" && (
+                    <span className="px-3 py-1.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-xs font-bold">
+                      Pickup — tunggu pelanggan ambil & bayar di toko
+                    </span>
+                  )}
+                  {order.status === "Perlu Dikirim" && order.paymentKind === "digital" && (
+                    <div className="flex flex-col gap-2 items-end">
+                      <Link
+                        href={`/admin/chat?tab=shipping&order=${order.uuid}`}
+                        className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-bold text-xs rounded-lg hover:bg-indigo-700 transition"
+                      >
+                        <MessageCircle size={14} />
+                        Chat Pembeli Dulu
+                      </Link>
+                      <button
+                        onClick={() => openModal(order)}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-[#1D4ED8] text-white font-bold text-xs rounded-lg hover:bg-blue-700 transition"
+                      >
+                        <Truck size={14} />
+                        Input Resi
+                      </button>
+                    </div>
                   )}
                   {order.status === "Sedang Dikirim" && (
                     <span className="px-3 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-xs font-bold flex items-center gap-1.5">

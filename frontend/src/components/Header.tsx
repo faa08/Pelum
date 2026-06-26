@@ -16,10 +16,14 @@ import {
   Share2,
   LogOut,
   Headphones,
+  Package,
 } from "lucide-react";
 import { authService } from "@/backend/authService";
+import { cartService } from "@/backend/cartService";
 import { useRouter } from "next/navigation";
 import { useCustomerService } from "@/components/CustomerServiceProvider";
+import { useNotifications } from "@/hooks/useNotifications";
+import type { NotificationItem } from "@/backend/notificationService";
 
 interface HeaderProps {
   cartCount?: number;
@@ -29,15 +33,7 @@ interface HeaderProps {
   setSearchQuery?: (q: string) => void;
 }
 
-interface Notification {
-  id: string;
-  text: string;
-  time: string;
-  type: "offer" | "accepted" | "message";
-  unread: boolean;
-}
-
-const INITIAL_NOTIFICATIONS: Notification[] = [];
+type Notification = NotificationItem;
 
 export default function Header({
   cartCount = 0,
@@ -50,9 +46,18 @@ export default function Header({
   const { open: openCustomerService } = useCustomerService();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
-  const [notifications, setNotifications] = useState<Notification[]>(INITIAL_NOTIFICATIONS);
+  const {
+    notifications,
+    unreadCount,
+    handleMarkAllRead,
+    handleClearAll,
+    handleToggleRead,
+  } = useNotifications();
   const [isMobile, setIsMobile] = useState(false);
   const [currentUser, setCurrentUser] = useState<ReturnType<typeof authService.getCurrentUser>>(null);
+  const [liveCartCount, setLiveCartCount] = useState(cartCount);
+
+  const displayCartCount = liveCartCount;
 
   const profileContainerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -71,7 +76,21 @@ export default function Header({
     return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
-  const unreadCount = notifications.filter((n) => n.unread).length;
+  useEffect(() => {
+    async function loadCart() {
+      const user = authService.getCurrentUser();
+      if (!user) {
+        setLiveCartCount(0);
+        return;
+      }
+      const items = await cartService.getCartItems(user.id_user);
+      setLiveCartCount(items.reduce((s, i) => s + i.qty_cartitem, 0));
+    }
+    loadCart();
+    const onFocus = () => loadCart();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [currentUser]);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -97,24 +116,6 @@ export default function Header({
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isProfileOpen, isOpen]);
-
-  const handleMarkAllRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, unread: false })));
-  };
-
-  const handleClearAll = () => {
-    setNotifications([]);
-  };
-
-  const handleToggleRead = (id: string) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, unread: !n.unread } : n))
-    );
-  };
-
-  const handleReset = () => {
-    setNotifications(INITIAL_NOTIFICATIONS);
-  };
 
   const renderNotifIcon = (type: Notification["type"]) => {
     switch (type) {
@@ -167,7 +168,7 @@ export default function Header({
               {/* Cart Icon */}
               <Link href="/keranjang" className="nav-cart-btn" id="cart-btn">
                 <ShoppingCart size={18} className="nav-icon-orange" />
-                <span>Keranjang</span>
+                <span>Keranjang{displayCartCount > 0 ? ` (${displayCartCount})` : ""}</span>
               </Link>
 
               {/* Chat Icon */}
@@ -335,6 +336,15 @@ export default function Header({
                       {/* Dropdown Items */}
                       <div className="flex flex-col gap-0.5 text-left font-body">
                         <Link
+                          href="/account/orders"
+                          onClick={() => setIsProfileOpen(false)}
+                          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                        >
+                          <Package className="w-4 h-4 text-gray-400" />
+                          <span>Pesanan Saya</span>
+                        </Link>
+
+                        <Link
                           href="/promo"
                           onClick={() => setIsProfileOpen(false)}
                           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
@@ -400,6 +410,15 @@ export default function Header({
 
                         {/* Dropdown Items */}
                         <div className="flex flex-col gap-0.5 text-left font-body">
+                          <Link
+                            href="/account/orders"
+                            onClick={() => setIsProfileOpen(false)}
+                            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                          >
+                            <Package className="w-4 h-4 text-gray-400" />
+                            <span>Pesanan Saya</span>
+                          </Link>
+
                           <Link
                             href="/promo"
                             onClick={() => setIsProfileOpen(false)}
@@ -510,6 +529,15 @@ export default function Header({
 
             {/* Menu Items */}
             <div className="flex flex-col gap-1 text-left font-body">
+              <Link
+                href="/account/orders"
+                onClick={() => setIsProfileOpen(false)}
+                className="flex items-center gap-4 px-4 py-3.5 rounded-xl text-sm font-bold text-[#5C5550] hover:bg-gray-50 transition-colors border border-gray-100/50"
+              >
+                <Package className="w-5 h-5 text-[#8E8680]" />
+                <span>Pesanan Saya</span>
+              </Link>
+
               <Link
                 href="/promo"
                 onClick={() => setIsProfileOpen(false)}

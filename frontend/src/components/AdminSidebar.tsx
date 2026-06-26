@@ -4,18 +4,21 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { authService } from "@/backend/authService";
+import { adminService } from "@/backend/adminService";
 
 export default function AdminSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [adminUser, setAdminUser] = useState<ReturnType<typeof authService.getCurrentUser>>(null);
+  const [pendingChatCount, setPendingChatCount] = useState(0);
 
   useEffect(() => {
     setAdminUser(authService.getCurrentUser());
     const handleStorage = () => setAdminUser(authService.getCurrentUser());
     window.addEventListener("storage", handleStorage);
+    adminService.getPendingShippingChatCount().then(setPendingChatCount);
     return () => window.removeEventListener("storage", handleStorage);
-  }, []);
+  }, [pathname]);
 
   const handleLogout = () => {
     authService.logout();
@@ -30,6 +33,7 @@ export default function AdminSidebar() {
     { name: "Manajemen Toko", href: "/admin/stores", icon: "storefront" },
     { name: "Manajemen Produk", href: "/admin/products", icon: "inventory_2" },
     { name: "Pesanan", href: "/admin/orders", icon: "shopping_bag" },
+    { name: "Pusat Chat", href: "/admin/chat", icon: "forum" },
     { name: "Pengiriman", href: "/admin/pengiriman", icon: "local_shipping" },
     { name: "Saldo", href: "/admin/saldo", icon: "account_balance_wallet" },
     { name: "Transaksi", href: "/admin/transactions", icon: "receipt_long" },
@@ -57,7 +61,9 @@ export default function AdminSidebar() {
       {/* Navigation Menu */}
       <nav className="flex-1 space-y-1">
         {menuItems.map((item) => {
-          const isActive = pathname === item.href;
+          const isActive = pathname === item.href || (item.href === "/admin/chat" && pathname.startsWith("/admin/chat"));
+          const badge =
+            item.href === "/admin/chat" && pendingChatCount > 0 ? pendingChatCount : null;
           return (
             <Link
               key={item.name}
@@ -69,7 +75,16 @@ export default function AdminSidebar() {
               }`}
             >
               <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
-              <span>{item.name}</span>
+              <span className="flex-1">{item.name}</span>
+              {badge !== null && (
+                <span
+                  className={`text-[10px] min-w-[20px] h-5 px-1.5 rounded-full flex items-center justify-center font-extrabold ${
+                    isActive ? "bg-white text-[#1D4ED8]" : "bg-[#1D4ED8] text-white"
+                  }`}
+                >
+                  {badge}
+                </span>
+              )}
             </Link>
           );
         })}

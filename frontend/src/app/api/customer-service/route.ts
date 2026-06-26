@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextRequest, NextResponse } from "next/server";
 import { CUSTOMER_SERVICE_SYSTEM_PROMPT } from "@/data/customerServiceKnowledge";
 
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+    const modelName = process.env.GEMINI_MODEL || "gemini-2.0-flash";
     const body = await request.json();
     const messages: ChatMessage[] = body.messages ?? [];
 
@@ -39,25 +39,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Pesan tidak valid" }, { status: 400 });
     }
 
-    const contents = messages.map((msg) => ({
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({
+      model: modelName,
+      systemInstruction: CUSTOMER_SERVICE_SYSTEM_PROMPT,
+    });
+
+    const history = messages.slice(0, -1).map((msg) => ({
       role: msg.role === "user" ? ("user" as const) : ("model" as const),
       parts: [{ text: msg.text }],
     }));
 
-    const ai = new GoogleGenAI({ apiKey });
-
-    const response = await ai.models.generateContent({
-      model,
-      contents,
-      config: {
-        systemInstruction: CUSTOMER_SERVICE_SYSTEM_PROMPT,
-        temperature: 0.7,
-        maxOutputTokens: 1024,
-      },
-    });
-
+    const lastUserText = messages[messages.length - 1].text;
+    const chat = model.startChat({ history });
+    const result = await chat.sendMessage(lastUserText);
     const reply =
-      response.text?.trim() ||
+      result.response
+        .text()
+        ?.trim() ||
       "Maaf, saya tidak dapat memproses permintaan Anda saat ini. Silakan coba lagi.";
 
     return NextResponse.json({ reply });

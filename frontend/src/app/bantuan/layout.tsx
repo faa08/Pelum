@@ -9,8 +9,11 @@ import { useCustomerService } from "@/components/CustomerServiceProvider";
 
 const NAV_ITEMS = [
   { label: "Pusat Bantuan", href: "/bantuan" },
-  { label: "FAQ / Tanya Jawab", href: "/bantuan/faq" },
-  { label: "Informasi Pengiriman", href: "/bantuan/info-pengiriman" },
+  { label: "Pembayaran & Pickup", href: "/bantuan/pembayaran" },
+  { label: "Pengiriman & Chat", href: "/bantuan/info-pengiriman" },
+  { label: "Kebijakan Return", href: "/bantuan/kebijakan-return" },
+  { label: "Model Konsinyasi", href: "/bantuan/konsinyasi" },
+  { label: "FAQ", href: "/bantuan/faq" },
   { label: "Syarat & Ketentuan", href: "/bantuan/syarat-ketentuan" },
 ];
 

@@ -68,7 +68,7 @@ const TOPICS = [
   },
   { 
     id: "mitra", 
-    label: "Mitra & Merchant", 
+    label: "Mitra Konsinyasi", 
     icon: Store, 
     bgColor: "bg-indigo-50", 
     textColor: "text-indigo-700", 
@@ -95,53 +95,53 @@ const FAQ_ARTICLES = [
   {
     id: "faq-3",
     topicId: "pesanan",
-    question: "Bagaimana cara melacak pengiriman pesanan saya?",
-    answer: "Masuk ke Akun > Pesanan Saya. Pilih produk yang ingin Anda lacak, klik 'Lacak Pengiriman'. Anda akan melihat status kurir secara real-time beserta nomor resi pengiriman yang terintegrasi langsung dengan jasa logistik."
+    question: "Bagaimana cara melacak pesanan saya?",
+    answer: "Masuk ke Akun > Pesanan Saya. Pantau status (Diproses, Dikirim, Selesai). Untuk pembayaran digital, gunakan tombol Chat Pengiriman untuk koordinasi dengan admin platform. Nomor resi (jika ada) tampil di detail pesanan."
   },
   {
     id: "faq-4",
     topicId: "pesanan",
-    question: "Berapa lama batas waktu pembayaran pesanan sebelum dibatalkan otomatis?",
-    answer: "Batas waktu pembayaran pesanan adalah 1x24 jam sejak pesanan dibuat. Jika pembayaran tidak diterima atau belum terverifikasi dalam batas waktu tersebut, sistem Pelataran UMKM akan membatalkan pesanan secara otomatis demi keamanan stok penjual."
+    question: "Kapan pesanan saya dianggap selesai?",
+    answer: "Klik 'Pesanan Selesai' setelah barang diterima (pengiriman) atau setelah ambil & bayar di toko (pickup). Admin juga dapat menandai selesai. Setelah itu Anda bisa memberi ulasan atau mengajukan return."
   },
   // Pembayaran
   {
     id: "faq-5",
     topicId: "pembayaran",
-    question: "Metode pembayaran apa saja yang didukung oleh Pelataran UMKM?",
-    answer: "Kami mendukung berbagai pilihan pembayaran aman: Virtual Account bank (BCA, Mandiri, BNI, BRI), e-Wallet (GoPay, OVO, ShopeePay, DANA), Transfer Bank manual, serta QRIS."
+    question: "Metode pembayaran apa saja yang tersedia?",
+    answer: "Dua pilihan saat checkout: (1) Bayar Digital via Midtrans — VA, e-wallet, kartu kredit; (2) Ambil di Toko — bayar & ambil sendiri di lokasi Pelataran UMKM Cilegon tanpa ongkir."
   },
   {
     id: "faq-6",
     topicId: "pembayaran",
-    question: "Bagaimana cara mengonfirmasi pembayaran jika menggunakan transfer bank manual?",
-    answer: "Jika menggunakan Transfer Bank Manual, Anda harus masuk ke detail Pesanan dan klik 'Konfirmasi Pembayaran'. Unggah foto bukti transfer ATM atau screenshot M-Banking Anda agar tim keuangan kami dapat memproses pesanan dalam kurun waktu maks. 15 menit."
+    question: "Apa yang terjadi setelah saya bayar digital?",
+    answer: "Pembayaran diverifikasi otomatis. Admin platform akan menghubungi Anda lewat Chat Pengiriman untuk mengatur pengiriman — bukan penjual UMKM langsung."
   },
   // Pengiriman
   {
     id: "faq-7",
     topicId: "pengiriman",
-    question: "Bagaimana cara menghitung estimasi ongkos kirim ke lokasi saya?",
-    answer: "Ongkos kirim dihitung secara otomatis berdasarkan berat produk, dimensi, serta jarak dari alamat toko penjual ke alamat pengiriman Anda saat berada di halaman checkout."
+    question: "Siapa yang mengatur pengiriman pesanan saya?",
+    answer: "Pelataran UMKM (platform) yang mengatur pengiriman dalam model konsinyasi. Setelah bayar digital, admin koordinasi alamat dan jadwal lewat chat. UMKM menitipkan barang, bukan mengirim sendiri ke pembeli."
   },
   {
     id: "faq-8",
     topicId: "pengiriman",
-    question: "Apakah Pelataran UMKM mendukung pengiriman instan/sameday?",
-    answer: "Ya, kami mendukung pengiriman instan dan sameday (GoSend/GrabExpress) selama merchant/penjual mengaktifkan fitur tersebut di toko mereka dan jarak pengantaran berada di dalam jangkauan kurir."
+    question: "Bagaimana cara ambil barang di toko?",
+    answer: "Pilih 'Ambil di Toko' saat checkout, konfirmasi alamat pickup, lalu datang ke Ruko BBS Cilegon untuk bayar dan ambil barang. Lihat detail alamat di halaman Pembayaran & Pickup."
   },
   // Pengembalian
   {
     id: "faq-9",
     topicId: "pengembalian",
-    question: "Bagaimana syarat mengajukan komplain atau pengembalian barang yang rusak?",
-    answer: "Anda wajib menyertakan video unboxing paket secara utuh tanpa jeda/edit saat mengajukan klaim pengembalian di menu detail pesanan. Permohonan pengembalian harus diajukan maksimal 2x24 jam sejak paket dinyatakan diterima oleh kurir."
+    question: "Bagaimana cara mengajukan return?",
+    answer: "Dari Pesanan Saya > tab Selesai > Ajukan Return. Isi alasan, lalu Anda diarahkan ke Chat Return dengan admin. Siapkan bukti (terutama video unboxing tanpa edit) sesuai Kebijakan Return."
   },
   {
     id: "faq-10",
     topicId: "pengembalian",
-    question: "Berapa lama proses pengembalian dana (refund) selesai?",
-    answer: "Proses pengembalian dana memakan waktu 1-3 hari kerja setelah produk yang dikembalikan disetujui oleh penjual atau ditengahi oleh admin Pelataran UMKM. Dana refund akan ditransfer ke saldo e-wallet Anda atau nomor rekening terdaftar."
+    question: "Bukti apa yang diperlukan untuk return?",
+    answer: "Video unboxing dari paket tersegel, foto kondisi barang & kerusakan, screenshot pesanan, serta kelengkapan aksesoris. Detail lengkap ada di halaman Kebijakan Return."
   },
   // Promosi
   {
@@ -160,14 +160,14 @@ const FAQ_ARTICLES = [
   {
     id: "faq-13",
     topicId: "mitra",
-    question: "Bagaimana langkah mendaftar menjadi Seller di Pelataran UMKM?",
-    answer: "Klik menu 'Mulai Jual / Jadi Seller' di navigasi atas atau menu akun Anda. Isi informasi detail toko (Nama Toko, Alamat Penjemputan, Nomor Telepon Aktif, Kategori Produk) lalu ikuti panduan verifikasi identitas KTP. Proses persetujuan memakan waktu maks. 24 jam."
+    question: "Bagaimana UMKM menitipkan produk (konsinyasi)?",
+    answer: "Daftar mitra di Akun > Program Seller. Setelah verifikasi, UMKM upload produk ke platform. Barang dijual lewat Pelataran UMKM — platform urus transaksi, pembayaran, dan layanan ke pembeli. Pendapatan dicatat ke saldo mitra."
   },
   {
     id: "faq-14",
     topicId: "mitra",
-    question: "Apa saja keuntungan menjadi Mitra UMKM Terverifikasi?",
-    answer: "Mitra UMKM Terverifikasi mendapatkan badge pelindung hijau khusus di toko mereka, prioritas eksposur produk di halaman beranda, potongan biaya administrasi bulanan, serta akses ke dasbor analitik penjualan tingkat lanjut secara gratis."
+    question: "Apakah UMKM perlu mengirim pesanan sendiri?",
+    answer: "Tidak. Dalam model konsinyasi, pengiriman dan chat ke pembeli ditangani admin platform. UMKM fokus pada kualitas produk dan ketersediaan stok."
   }
 ];
 

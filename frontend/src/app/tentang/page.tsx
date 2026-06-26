@@ -51,7 +51,8 @@ export default function TentangPage() {
               <span className="opacity-80">Satu Produk Lokal</span>
             </h1>
             <p className="text-base opacity-85 max-w-2xl mx-auto leading-relaxed mb-8">
-              Pelataran UMKM adalah marketplace digital yang menghubungkan pelaku usaha mikro, kecil, dan menengah Indonesia dengan jutaan pembeli di seluruh nusantara.
+              Pelataran UMKM adalah platform <strong>titip jual (konsinyasi)</strong> yang menghubungkan produk UMKM Indonesia
+              dengan pembeli — kami urus penjualan, pembayaran, dan pengiriman.
             </p>
             <div className="flex flex-wrap gap-3 justify-center">
               <Link href="/daftar" className="px-6 py-3 bg-white text-primary font-bold text-sm rounded-lg hover:brightness-95 transition">

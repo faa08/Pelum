@@ -34,14 +34,17 @@ function LoginForm() {
   // Redirect if already logged in
   useEffect(() => {
     const currentUser = authService.getCurrentUser();
+    const redirectTo = searchParams.get("redirect");
     if (currentUser) {
-      if (currentUser.role === "admin") {
+      if (redirectTo) {
+        router.push(redirectTo);
+      } else if (currentUser.role === "admin") {
         router.push("/admin/dashboard");
       } else {
         router.push("/account/profile");
       }
     }
-  }, [router]);
+  }, [router, searchParams]);
 
   useEffect(() => {
     const err = searchParams.get("error");
@@ -68,9 +71,12 @@ function LoginForm() {
     setLoading(true);
 
     try {
-      const user = await authService.login(email, password);
+      const { user, error: loginError } = await authService.login(email, password);
       if (user) {
-        if (user.role === "admin") {
+        const redirectTo = searchParams.get("redirect");
+        if (redirectTo) {
+          router.push(redirectTo);
+        } else if (user.role === "admin") {
           router.push("/admin/dashboard");
         } else {
           router.push("/account/profile");
@@ -78,8 +84,14 @@ function LoginForm() {
       } else {
         if (!authService.isSupabaseConfigured()) {
           setErrorMsg("Supabase belum dikonfigurasi. Buat file frontend/.env.local dari .env.local.example dan isi URL + API key Supabase Anda, lalu restart server.");
+        } else if (loginError === "not_found") {
+          setErrorMsg("Email belum terdaftar. Daftar akun baru atau jalankan seed admin di Supabase SQL Editor.");
+        } else if (loginError === "wrong_password") {
+          setErrorMsg("Kata sandi salah. Periksa kembali password Anda.");
+        } else if (loginError === "no_password") {
+          setErrorMsg("Akun ini belum punya password. Gunakan fitur lupa password atau reset via Supabase.");
         } else {
-          setErrorMsg("Login gagal! Email atau kata sandi salah. Silakan periksa kembali.");
+          setErrorMsg("Gagal menghubungi database. Coba lagi atau periksa koneksi Supabase.");
         }
       }
     } catch (err: any) {

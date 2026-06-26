@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { sellerService, Seller } from "@/backend/sellerService";
+import { sellerService, Seller, generateStoreEmail } from "@/backend/sellerService";
 import { supabase } from "@/backend/supabase";
 
 interface Store {
@@ -26,6 +26,7 @@ export default function AdminStoresPage() {
   const [newStoreOwnerName, setNewStoreOwnerName] = useState("");
   const [newStoreLogo, setNewStoreLogo] = useState("");
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [isAddingStore, setIsAddingStore] = useState(false);
 
   // Edit store Modal States
   const [showEditModal, setShowEditModal] = useState(false);
@@ -224,42 +225,47 @@ export default function AdminStoresPage() {
     setNewStoreOwnerName("");
     setNewStoreLogo("");
     setUploadProgress(null);
+    setIsAddingStore(false);
   };
 
   const handleAddStoreSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAddingStore) return;
     if (!newStoreName.trim() || !newStoreOwnerName.trim()) {
       alert("Nama Toko dan Nama Pemilik wajib diisi.");
       return;
     }
 
-    const generatedEmail = `${newStoreName.toLowerCase().replace(/\s+/g, ".").replace(/[^a-z0-9.]/g, "")}@pelataranumkm.id`;
+    const generatedEmail = generateStoreEmail(newStoreName.trim());
 
+    setIsAddingStore(true);
     try {
       const newStore = await sellerService.createStore(
-        newStoreName,
+        newStoreName.trim(),
         generatedEmail,
         "",
         "",
-        "",
+        "Indonesia",
         "",
         "",
         "",
         true,
-        newStoreOwnerName,
+        newStoreOwnerName.trim(),
         newStoreLogo || undefined
       );
 
       if (newStore) {
         showToast(`Toko ${newStoreName} berhasil ditambahkan dan langsung aktif!`, "success");
-        loadData();
+        await loadData();
         handleCloseModal();
       } else {
-        showToast("Gagal menambahkan toko. Email mungkin sudah terdaftar sebagai toko.", "error");
+        showToast("Gagal menambahkan toko. Periksa koneksi database atau hak akses Supabase.", "error");
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Gagal menambahkan toko.";
       showToast(message, "error");
+    } finally {
+      setIsAddingStore(false);
     }
   };
 
@@ -555,10 +561,11 @@ export default function AdminStoresPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#1D4ED8] text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition flex items-center gap-1.5"
+                  disabled={isAddingStore}
+                  className="px-5 py-2 bg-[#1D4ED8] text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition flex items-center gap-1.5 disabled:opacity-60"
                 >
                   <span className="material-symbols-outlined text-[16px]">add</span>
-                  Tambah Toko
+                  {isAddingStore ? "Menyimpan..." : "Tambah Toko"}
                 </button>
               </div>
             </form>

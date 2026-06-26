@@ -273,6 +273,143 @@
   cursor: not-allowed;
 }
 
+.cs-mode-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 12px;
+  background: #F5F3F0;
+  border-bottom: 1px solid #EAE5E0;
+  flex-shrink: 0;
+}
+
+.cs-mode-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #5C5550;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.cs-mode-tab:hover {
+  color: #1D4ED8;
+}
+
+.cs-mode-tab--active {
+  color: #1D4ED8;
+  border-bottom-color: #1D4ED8;
+  background: #FFFFFF;
+}
+
+.cs-panel-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.cs-admin-error {
+  flex-shrink: 0;
+  margin: 10px 12px 0;
+  padding: 8px 12px;
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: 8px;
+  font-size: 0.6875rem;
+  line-height: 1.45;
+  color: #B91C1C;
+}
+
+.cs-input:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  background: #F5F3F0;
+}
+
+.cs-msg-avatar--human {
+  background: #ECFDF5;
+  color: #15803D;
+}
+
+.cs-message--human .cs-msg-bubble {
+  border-color: #BBF7D0;
+}
+
+.cs-msg-label {
+  display: block;
+  font-size: 0.625rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #15803D;
+  margin-bottom: 4px;
+}
+
+.cs-send-btn--admin {
+  background: #15803D;
+}
+
+.cs-send-btn--admin:hover:not(:disabled) {
+  background: #166534;
+}
+
+.cs-admin-login-prompt {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  text-align: center;
+  background: #FAF9F6;
+  gap: 8px;
+}
+
+.cs-admin-login-icon {
+  color: #1D4ED8;
+  margin-bottom: 8px;
+}
+
+.cs-admin-login-title {
+  font-size: 0.9375rem;
+  font-weight: 800;
+  color: #1F1B18;
+  margin: 0;
+}
+
+.cs-admin-login-desc {
+  font-size: 0.75rem;
+  color: #5C5550;
+  line-height: 1.5;
+  margin: 0 0 12px;
+  max-width: 260px;
+}
+
+.cs-admin-login-btn {
+  display: inline-block;
+  padding: 10px 20px;
+  background: #1D4ED8;
+  color: #FFFFFF;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  border-radius: 8px;
+  text-decoration: none;
+}
+
+.cs-admin-login-btn:hover {
+  background: #1E40AF;
+}
+
 @media (max-width: 480px) {
   .cs-panel {
     bottom: 0;

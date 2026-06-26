@@ -1,73 +1,44 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Trash2, Plus, Minus, Tag, ShoppingBag, ChevronRight, ShieldCheck, Truck } from "lucide-react";
+import { Trash2, Plus, Minus, Tag, ShoppingBag, ChevronRight, ShieldCheck, Truck, Loader2 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import SearchBar from "@/components/SearchBar";
 import Footer from "@/components/Footer";
+import { authService } from "@/backend/authService";
+import { cartService } from "@/backend/cartService";
+import { orderService } from "@/backend/orderService";
 
-/* ─────────────────────────────────────────
-   Types & initial data
- ───────────────────────────────────────── */
-interface CartItem {
-  id: number;
+interface UICartItem {
+  id_cart_item: string;
+  id_produk: string;
+  slug?: string;
   name: string;
   seller: string;
   price: number;
-  originalPrice?: number;
   qty: number;
   image: string;
-  color: string;
-  size: string;
   checked: boolean;
 }
 
-const INITIAL_CART: CartItem[] = [
-  {
-    id: 1,
-    name: "Mangkuk Keramik Motif Batik",
-    seller: "Griya Keramik Kasongan",
-    price: 125000,
-    originalPrice: 150000,
-    qty: 2,
-    image: "/product-detail-keramik.png",
-    color: "Biru Batik",
-    size: "15 cm",
-    checked: true,
-  },
-  {
-    id: 2,
-    name: "Kopi Arabika Gayo Premium",
-    seller: "Kopi Nusantara Store",
-    price: 85000,
-    qty: 1,
-    image: "/product-kopi.png",
-    color: "—",
-    size: "250 gram",
-    checked: true,
-  },
-  {
-    id: 3,
-    name: "Dompet Kulit Batik Eksklusif",
-    seller: "Batik Craft Jogja",
-    price: 195000,
-    qty: 1,
-    image: "/product-dompet.png",
-    color: "Cokelat Tanah",
-    size: "Medium",
-    checked: false,
-  },
-];
+import { productService } from "@/backend/productService";
+import { productToCard, type ProductCard } from "@/lib/productUi";
 
-const RECOMMENDED = [
-  { id: 1, name: "Gelas Keramik Motif Batik Indigo", price: 75000, rating: 4.8, sold: 120, image: "/similar-1.png" },
-  { id: 2, name: "Piring Dekoratif Batik Parang", price: 95000, rating: 5.0, sold: 45, image: "/similar-2.png" },
-  { id: 3, name: "Set Wadah Sambel Keramik", price: 120000, rating: 4.7, sold: 80, image: "/similar-3.png" },
-  { id: 4, name: "Vas Bunga Keramik Kontemporer", price: 210000, rating: 4.9, sold: 30, image: "/similar-4.png" },
-];
+function parseProductImg(img?: string | null): string {
+  if (!img) return "/product-keramik.png";
+  if (img.startsWith("[")) {
+    try {
+      const arr = JSON.parse(img);
+      return arr[0] || "/product-keramik.png";
+    } catch {
+      return "/product-keramik.png";
+    }
+  }
+  return img;
+}
 
 function fmtPrice(p: number) {
   return `Rp ${p.toLocaleString("id-ID")}`;
@@ -91,10 +62,49 @@ const C = {
 
 export default function CartPage() {
   const router = useRouter();
-  const [items, setItems] = useState<CartItem[]>(INITIAL_CART);
+  const [items, setItems] = useState<UICartItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [voucher, setVoucher] = useState("");
   const [voucherApplied, setVoucherApplied] = useState(false);
+  const [recommended, setRecommended] = useState<ProductCard[]>([]);
   const [allChecked, setAllChecked] = useState(false);
+
+  useEffect(() => {
+    productService.getProducts({ publicOnly: true, limit: 4, includeImages: true }).then(async (data) => {
+      const stats = await productService.getProductStats(data.map((p) => p.id_produk));
+      setRecommended(data.map((p) => productToCard(p, stats[p.id_produk])));
+    });
+  }, []);
+
+  const loadCart = useCallback(async () => {
+    const user = authService.getCurrentUser();
+    if (!user) {
+      router.replace("/masuk?redirect=/keranjang");
+      return;
+    }
+    setLoading(true);
+    const dbItems = await cartService.getCartItems(user.id_user);
+    const mapped: UICartItem[] = dbItems
+      .filter((i) => i.produk)
+      .map((i) => ({
+        id_cart_item: i.id_cart_item,
+        id_produk: i.id_produk,
+        slug: i.produk!.slug,
+        name: i.produk!.nama_produk,
+        seller: i.produk!.nm_store || "Toko UMKM",
+        price: i.produk!.harga,
+        qty: i.qty_cartitem,
+        image: parseProductImg(i.produk!.img),
+        checked: true,
+      }));
+    setItems(mapped);
+    setAllChecked(mapped.length > 0);
+    setLoading(false);
+  }, [router]);
+
+  useEffect(() => {
+    loadCart();
+  }, [loadCart]);
 
   /* ── helpers ── */
   const checkedItems = items.filter((i) => i.checked);
@@ -103,21 +113,30 @@ export default function CartPage() {
   const shipping = checkedItems.length > 0 ? 15000 : 0;
   const total = subtotal - discount + shipping;
 
-  function updateQty(id: number, delta: number) {
+  async function updateQty(id: string, delta: number) {
+    const item = items.find((it) => it.id_cart_item === id);
+    if (!item) return;
+    const newQty = Math.max(1, item.qty + delta);
     setItems((prev) =>
-      prev.map((it) =>
-        it.id === id ? { ...it, qty: Math.max(1, it.qty + delta) } : it
-      )
+      prev.map((it) => (it.id_cart_item === id ? { ...it, qty: newQty } : it))
     );
+    await cartService.updateCartQuantity(id, newQty);
   }
 
-  function removeItem(id: number) {
-    setItems((prev) => prev.filter((it) => it.id !== id));
+  async function removeItem(id: string) {
+    setItems((prev) => prev.filter((it) => it.id_cart_item !== id));
+    await cartService.removeFromCart(id);
   }
 
-  function toggleItem(id: number) {
+  async function removeChecked() {
+    const ids = checkedItems.map((i) => i.id_cart_item);
+    setItems((prev) => prev.filter((it) => !ids.includes(it.id_cart_item)));
+    await Promise.all(ids.map((id) => cartService.removeFromCart(id)));
+  }
+
+  function toggleItem(id: string) {
     setItems((prev) =>
-      prev.map((it) => (it.id === id ? { ...it, checked: !it.checked } : it))
+      prev.map((it) => (it.id_cart_item === id ? { ...it, checked: !it.checked } : it))
     );
   }
 
@@ -133,6 +152,33 @@ export default function CartPage() {
     } else {
       alert("Kode voucher tidak valid.");
     }
+  }
+
+  function handleCheckout() {
+    if (checkedItems.length === 0) return;
+    orderService.saveCheckoutSession(checkedItems.map((i) => i.id_cart_item));
+    if (voucherApplied) {
+      sessionStorage.setItem(
+        "pelum_checkout_voucher",
+        JSON.stringify({ code: "LOKALBANGGA", discount })
+      );
+    } else {
+      sessionStorage.removeItem("pelum_checkout_voucher");
+    }
+    router.push("/checkout");
+  }
+
+  if (loading) {
+    return (
+      <>
+        <Navbar />
+        <SearchBar />
+        <main style={{ background: C.surface, minHeight: "70vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Loader2 size={32} color={C.primary} className="animate-spin" />
+        </main>
+        <Footer />
+      </>
+    );
   }
 
   /* ── render ── */
@@ -196,7 +242,7 @@ export default function CartPage() {
                   </label>
                   {checkedItems.length > 0 && (
                     <button
-                      onClick={() => { const ids = checkedItems.map(i => i.id); setItems(prev => prev.filter(it => !ids.includes(it.id))); }}
+                      onClick={removeChecked}
                       style={{ marginLeft: "auto", fontSize: "0.8rem", fontWeight: 600, color: "#EF4444", background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
                     >
                       <Trash2 size={14} />
@@ -207,7 +253,7 @@ export default function CartPage() {
 
                 {/* Items */}
                 {items.map((item) => (
-                  <div key={item.id} style={{
+                  <div key={item.id_cart_item} style={{
                     background: C.card,
                     border: `1px solid ${item.checked ? C.primary : C.border}`,
                     borderRadius: 12,
@@ -221,7 +267,7 @@ export default function CartPage() {
                     <input
                       type="checkbox"
                       checked={item.checked}
-                      onChange={() => toggleItem(item.id)}
+                      onChange={() => toggleItem(item.id_cart_item)}
                       style={{ width: 16, height: 16, accentColor: C.primary, cursor: "pointer", marginTop: 4, flexShrink: 0 }}
                     />
 
@@ -237,25 +283,13 @@ export default function CartPage() {
                           <p style={{ fontSize: "0.7rem", fontWeight: 700, color: C.textMuted, letterSpacing: "0.04em", margin: "0 0 4px 0", textTransform: "uppercase" }}>
                             {item.seller}
                           </p>
-                          <Link href={`/produk/${item.id}`} style={{ fontSize: "0.9375rem", fontWeight: 700, color: C.text, textDecoration: "none", display: "block", lineHeight: 1.35 }}>
+                          <Link href={`/produk/${item.slug || item.id_produk}`} style={{ fontSize: "0.9375rem", fontWeight: 700, color: C.text, textDecoration: "none", display: "block", lineHeight: 1.35 }}>
                             {item.name}
                           </Link>
                         </div>
-                        <button onClick={() => removeItem(item.id)} style={{ background: "none", border: "none", cursor: "pointer", color: C.textMuted, padding: 4, flexShrink: 0 }}>
+                        <button onClick={() => removeItem(item.id_cart_item)} style={{ background: "none", border: "none", cursor: "pointer", color: C.textMuted, padding: 4, flexShrink: 0 }}>
                           <Trash2 size={16} />
                         </button>
-                      </div>
-
-                      {/* Variant */}
-                      <div style={{ display: "flex", gap: 8 }}>
-                        {item.color !== "—" && (
-                          <span style={{ fontSize: "0.75rem", color: C.textSec, background: "#F4F1EE", borderRadius: 4, padding: "2px 8px", fontWeight: 500 }}>
-                            {item.color}
-                          </span>
-                        )}
-                        <span style={{ fontSize: "0.75rem", color: C.textSec, background: "#F4F1EE", borderRadius: 4, padding: "2px 8px", fontWeight: 500 }}>
-                          {item.size}
-                        </span>
                       </div>
 
                       {/* Price + Qty Row */}
@@ -264,17 +298,12 @@ export default function CartPage() {
                           <span style={{ fontSize: "1.0625rem", fontWeight: 800, color: C.primary }}>
                             {fmtPrice(item.price)}
                           </span>
-                          {item.originalPrice && (
-                            <span style={{ fontSize: "0.8rem", color: C.textMuted, textDecoration: "line-through", marginLeft: 8 }}>
-                              {fmtPrice(item.originalPrice)}
-                            </span>
-                          )}
                         </div>
 
                         {/* Qty Controls */}
                         <div style={{ display: "flex", alignItems: "center", gap: 0, border: `1.5px solid ${C.borderStrong}`, borderRadius: 8, overflow: "hidden" }}>
                           <button
-                            onClick={() => updateQty(item.id, -1)}
+                            onClick={() => updateQty(item.id_cart_item, -1)}
                             disabled={item.qty <= 1}
                             style={{
                               width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center",
@@ -288,7 +317,7 @@ export default function CartPage() {
                             {item.qty}
                           </span>
                           <button
-                            onClick={() => updateQty(item.id, 1)}
+                            onClick={() => updateQty(item.id_cart_item, 1)}
                             style={{
                               width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center",
                               background: "none", border: "none", cursor: "pointer", color: C.text, transition: "background 0.15s",
@@ -399,26 +428,19 @@ export default function CartPage() {
                   </div>
 
                   {/* Checkout Button */}
-                  <Link
-                    href={checkedItems.length === 0 ? "#" : "/checkout"}
-                    onClick={(e) => {
-                      if (checkedItems.length === 0) e.preventDefault();
+                  <button
+                    onClick={handleCheckout}
+                    disabled={checkedItems.length === 0}
+                    style={{
+                      width: "100%", height: 50, marginTop: 20,
+                      background: checkedItems.length === 0 ? C.borderStrong : C.primary,
+                      color: "white", borderRadius: 10, border: "none",
+                      fontSize: "0.9375rem", fontWeight: 800, cursor: checkedItems.length === 0 ? "not-allowed" : "pointer",
+                      fontFamily: "inherit", transition: "background 0.2s",
                     }}
-                    style={{ textDecoration: "none", pointerEvents: checkedItems.length === 0 ? "none" : "auto", display: "block" }}
                   >
-                    <button
-                      disabled={checkedItems.length === 0}
-                      style={{
-                        width: "100%", height: 50, marginTop: 20,
-                        background: checkedItems.length === 0 ? C.borderStrong : C.primary,
-                        color: "white", borderRadius: 10, border: "none",
-                        fontSize: "0.9375rem", fontWeight: 800, cursor: checkedItems.length === 0 ? "not-allowed" : "pointer",
-                        fontFamily: "inherit", transition: "background 0.2s",
-                      }}
-                    >
-                      {checkedItems.length === 0 ? "Pilih Produk Terlebih Dahulu" : `Beli Sekarang (${checkedItems.reduce((s, i) => s + i.qty, 0)} item)`}
-                    </button>
-                  </Link>
+                    {checkedItems.length === 0 ? "Pilih Produk Terlebih Dahulu" : `Beli Sekarang (${checkedItems.reduce((s, i) => s + i.qty, 0)} item)`}
+                  </button>
 
                   <p style={{ fontSize: "0.75rem", color: C.textMuted, textAlign: "center", marginTop: 12, marginBottom: 0 }}>
                     Dengan melanjutkan, kamu menyetujui{" "}
@@ -456,8 +478,8 @@ export default function CartPage() {
               </Link>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
-              {RECOMMENDED.map((p) => (
-                <Link key={p.id} href={`/produk/rekomendasi-${p.id}`} style={{
+              {recommended.map((p) => (
+                <Link key={p.id} href={`/produk/${p.slug}`} style={{
                   background: C.card, border: `1px solid ${C.border}`, borderRadius: 12,
                   overflow: "hidden", textDecoration: "none", display: "flex",
                   flexDirection: "column", transition: "transform 0.2s, box-shadow 0.2s",

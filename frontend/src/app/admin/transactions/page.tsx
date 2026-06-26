@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { adminService } from "@/backend/adminService";
 
 interface Transaction {
   id: string;
@@ -19,13 +20,18 @@ export default function AdminTransactionsPage() {
 
   // Simulation loading data from Backend / DB
   useEffect(() => {
-    const timer = setTimeout(() => {
-      // Mocking empty state initially
-      setTransactions([]);
+    async function fetchTransactions() {
+      setIsLoading(true);
+      const data = await adminService.getTransactions();
+      setTransactions(
+        data.map((t) => ({
+          ...t,
+          status: t.status as Transaction["status"],
+        }))
+      );
       setIsLoading(false);
-    }, 1500);
-
-    return () => clearTimeout(timer);
+    }
+    fetchTransactions();
   }, []);
 
   /* 

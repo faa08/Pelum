@@ -22,6 +22,7 @@ import Footer from "@/components/Footer";
 import CategoryHero from "@/components/CategoryHero";
 import { getCategoryHeroConfig } from "@/data/categoryHero";
 import { productService } from "@/backend/productService";
+import { parseProductImg, ProductGridImage } from "@/lib/productUi";
 import { cartService } from "@/backend/cartService";
 import { authService } from "@/backend/authService";
 
@@ -63,13 +64,13 @@ export default function CategoryPage({ params }: { params: Promise<{ slug?: stri
   useEffect(() => {
     async function loadProducts() {
       try {
-        const data = await productService.getProducts({ publicOnly: true });
+        const data = await productService.getProducts({ publicOnly: true, limit: 200, includeImages: true });
         const mapped = data.map((p: any) => ({
           id: p.id_produk,
           slug: p.slug || p.id_produk,
           name: p.nama_produk,
           price: p.harga,
-          image: p.img || "/product-keramik.png",
+          image: parseProductImg(p.img),
           category: p.category || "UMKM Lokal",
           categorySlug: p.categorySlug || "kerajinan",
           rating: 4.8,
@@ -266,13 +267,7 @@ export default function CategoryPage({ params }: { params: Promise<{ slug?: stri
                     >
                       <Link href={`/produk/${product.slug}`} style={{ textDecoration: "none" }}>
                         <div style={{ position: "relative", aspectRatio: "1/1", width: "100%", background: "#F6F4F0" }}>
-                          <Image
-                            src={product.image}
-                            alt={product.name}
-                            fill
-                            style={{ objectFit: "cover" }}
-                            sizes="(max-width: 768px) 50vw, 220px"
-                          />
+                          <ProductGridImage src={product.image} alt={product.name} sizes="(max-width: 768px) 50vw, 220px" />
                           {product.badge && (
                             <span style={{
                               position: "absolute",
@@ -316,11 +311,11 @@ export default function CategoryPage({ params }: { params: Promise<{ slug?: stri
                                 window.location.href = "/masuk";
                                 return;
                               }
-                              const success = await cartService.addToCart(user.id_user, product.id, 1);
-                              if (success) {
+                              const result = await cartService.addToCart(user.id_user, product.id, 1);
+                              if (result.ok) {
                                 alert("Produk berhasil ditambahkan ke keranjang!");
                               } else {
-                                alert("Gagal menambahkan ke keranjang.");
+                                alert(result.error || "Gagal menambahkan ke keranjang.");
                               }
                             }}
                           >

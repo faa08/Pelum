@@ -3,7 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ChevronRight, Mail, Phone, MapPin, Clock, Send, CheckCircle, MessageSquare, HeadphonesIcon } from "lucide-react";
-import Navbar from "@/components/Navbar";
+import { supportService } from "@/backend/supportService";
+import { authService } from "@/backend/authService";
 import Footer from "@/components/Footer";
 
 const CONTACT_CARDS = [
@@ -18,10 +19,20 @@ export default function KontakPage() {
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    setTimeout(() => { setLoading(false); setSent(true); }, 1400);
+    const user = authService.getCurrentUser();
+    const ok = await supportService.submitContact({
+      userId: user?.id_user,
+      name: form.name,
+      email: form.email,
+      subject: form.subject,
+      message: form.message,
+    });
+    setLoading(false);
+    if (ok) setSent(true);
+    else alert("Gagal mengirim pesan. Coba lagi.");
   }
 
   return (

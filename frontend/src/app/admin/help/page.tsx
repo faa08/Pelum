@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { authService } from "@/backend/authService";
-import { chatService } from "@/backend/chatService";
+import { supportService } from "@/backend/supportService";
 
 export default function AdminHelpPage() {
   const [ticketSubject, setTicketSubject] = useState("");
@@ -28,7 +28,7 @@ export default function AdminHelpPage() {
     e.preventDefault();
     const user = authService.getCurrentUser();
     const userId = user ? user.id_user : null;
-    const success = await chatService.createSupportTicket(userId, ticketSubject, ticketMessage);
+    const success = await supportService.createSupportTicket(userId, ticketSubject, ticketMessage);
     if (success) {
       alert("Tiket Bantuan Admin Berhasil Terkirim!");
       setTicketSubject("");

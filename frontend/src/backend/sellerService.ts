@@ -33,9 +33,188 @@ export interface Seller {
   };
 }
 
+export interface StoreStats {
+  productCount: number;
+  followerCount: number;
+  avgRating: number;
+  reviewCount: number;
+  totalSold: number;
+  joinedAt: string;
+}
+
+const IKUT_TOKO_KEY = "pelum_ikut_toko";
+
 const isPlaceholder = () => {
   return !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder");
 };
+
+function errorToMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === "object") {
+    const e = err as { message?: string; details?: string; hint?: string; code?: string };
+    return e.message || e.details || e.hint || fallbackForObject(err);
+  }
+  return String(err);
+}
+
+function fallbackForObject(err: object): string {
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return "Terjadi kesalahan database.";
+  }
+}
+
+function formatDbError(err: unknown, fallback: string): string {
+  const msg = errorToMessage(err) || fallback;
+  if (msg.includes("row-level security") || msg.includes("RLS")) {
+    return "Akses database ditolak (RLS). Jalankan bagian RLS/MIGRASI di db.sql di Supabase SQL Editor.";
+  }
+  if (msg.includes("Invalid API key") || msg.includes("invalid api key")) {
+    return "API key tidak valid. Pastikan URL dan anon key di .env.local dari project Supabase yang sama.";
+  }
+  if (msg.includes("23505") || msg.includes("duplicate")) {
+    return "Email atau username toko sudah terdaftar. Coba lagi.";
+  }
+  if (msg.includes("could not find") || msg.includes("pgrst205") || msg.includes("ikut_toko")) {
+    return "Tabel pengikut toko belum dibuat. Jalankan bagian MIGRASI ikut_toko di db.sql di Supabase SQL Editor.";
+  }
+  return msg;
+}
+
+/** Slug URL toko dari nama toko — dipakai di /toko/[slug] */
+export function storeNameToSlug(nm_store: string): string {
+  return nm_store
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^\w\-]+/g, "")
+    .replace(/\-\-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/** Email unik per toko — hindari bentrok UNIQUE constraint di users/seller */
+export function generateStoreEmail(storeName: string): string {
+  const slug =
+    storeName
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, ".")
+      .replace(/[^a-z0-9.]/g, "")
+      .replace(/\.+/g, ".")
+      .replace(/^\.+|\.+$/g, "") || "toko";
+  const suffix =
+    typeof crypto !== "undefined"
+      ? crypto.randomUUID().replace(/-/g, "").substring(0, 8)
+      : Date.now().toString(36);
+  return `${slug}.${suffix}@pelataranumkm.id`;
+}
+
+/** Insert toko langsung via anon key (cocok jika RLS users/seller sudah dimatikan) */
+async function createStoreDirect(
+  nm_store: string,
+  email: string,
+  no_telp: string,
+  deskripsi: string,
+  addr: string,
+  nama_bank: string,
+  no_rek: string,
+  atas_nama_rek: string,
+  is_verified: boolean,
+  nama_pemilik?: string,
+  logo_toko?: string
+): Promise<Seller> {
+  let id_user = "";
+
+  const { data: existingUser, error: findUserError } = await supabase
+    .from("users")
+    .select("id_user, role")
+    .eq("email", email)
+    .maybeSingle();
+
+  if (findUserError) throw findUserError;
+
+  if (existingUser) {
+    id_user = existingUser.id_user;
+    const updates: Record<string, string> = {};
+    if (existingUser.role !== "seller" && existingUser.role !== "admin") {
+      updates.role = "seller";
+    }
+    if (nama_pemilik) updates.nama_lengkap = nama_pemilik;
+    if (Object.keys(updates).length > 0) {
+      const { error: updateRoleError } = await supabase
+        .from("users")
+        .update(updates)
+        .eq("id_user", id_user);
+      if (updateRoleError) throw updateRoleError;
+    }
+  } else {
+    const generatedId =
+      typeof crypto !== "undefined" ? crypto.randomUUID() : `u-${Math.random().toString(36).substring(2, 11)}`;
+    const generatedUsername = `${email.split("@")[0]}_${Math.random().toString(36).substring(2, 6)}`;
+    const { error: createUserError } = await supabase.from("users").insert({
+      id_user: generatedId,
+      username: generatedUsername,
+      email,
+      nama_lengkap: nama_pemilik || nm_store,
+      no_telp,
+      password: "no-password-plain",
+      role: "seller",
+      avatar:
+        "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=150&auto=format&fit=crop",
+    });
+    if (createUserError) throw createUserError;
+    id_user = generatedId;
+  }
+
+  const { data: existingSeller } = await supabase
+    .from("seller")
+    .select("id_seller")
+    .eq("id_user", id_user)
+    .maybeSingle();
+
+  if (existingSeller) {
+    throw new Error("Pengguna ini sudah memiliki toko.");
+  }
+
+  const id_seller =
+    typeof crypto !== "undefined" ? crypto.randomUUID() : `s-${Math.random().toString(36).substring(2, 11)}`;
+  const defaultLogo =
+    "https://images.unsplash.com/photo-1544816155-12df9643f363?q=80&w=100&auto=format&fit=crop";
+
+  const { error: insertStoreError } = await supabase.from("seller").insert({
+    id_seller,
+    id_user,
+    nm_store,
+    deskripsi: deskripsi || `Selamat datang di ${nm_store}`,
+    logo_toko: logo_toko || defaultLogo,
+    email,
+    no_telp,
+    addr: addr || "Indonesia",
+    nama_bank,
+    no_rek,
+    atas_nama_rek,
+    is_verified,
+  });
+
+  if (insertStoreError) throw insertStoreError;
+
+  return {
+    id_seller,
+    id_user,
+    nm_store,
+    deskripsi: deskripsi || `Selamat datang di ${nm_store}`,
+    logo_toko: logo_toko || defaultLogo,
+    email,
+    no_telp,
+    addr: addr || "Indonesia",
+    nama_bank,
+    no_rek,
+    atas_nama_rek,
+    created_at: new Date().toISOString(),
+    is_verified,
+  };
+}
 
 export const sellerService = {
   // Retrieve seller profile by user ID
@@ -88,20 +267,21 @@ export const sellerService = {
     try {
       const { data, error } = await supabase
         .from("seller")
-        .select(`
-          *,
-          users(nama_lengkap)
-        `)
+        .select(`*, users(nama_lengkap)`)
         .order("created_at", { ascending: false });
 
-      if (error) {
-        console.error("Supabase get sellers error:", error);
-        return [];
+      if (!error && data) {
+        return data;
       }
-      return data || [];
+
+      if (error) {
+        console.warn("getSellers direct failed:", errorToMessage(error));
+        throw new Error(formatDbError(error, "Gagal memuat daftar toko"));
+      }
+      return [];
     } catch (err) {
       console.error("sellerService getSellers failed:", err);
-      return [];
+      throw err;
     }
   },
 
@@ -149,8 +329,6 @@ export const sellerService = {
   ): Promise<Seller | null> {
     console.log("Calling sellerService.createStore for:", nm_store);
 
-    let id_user = "";
-
     if (isPlaceholder()) {
       const storedUsers = localStorage.getItem("pelum_users");
       const users = storedUsers ? JSON.parse(storedUsers) : [];
@@ -175,7 +353,7 @@ export const sellerService = {
         if (nama_pemilik) foundUser.nama_lengkap = nama_pemilik;
         localStorage.setItem("pelum_users", JSON.stringify(users));
       }
-      id_user = foundUser.id_user;
+      const id_user = foundUser.id_user;
 
       const storedSellers = localStorage.getItem("pelum_sellers");
       const sellers = storedSellers ? JSON.parse(storedSellers) : [];
@@ -207,98 +385,54 @@ export const sellerService = {
     }
 
     try {
-      const { data: existingUser, error: findUserError } = await supabase
-        .from("users")
-        .select("id_user, role")
-        .eq("email", email)
-        .maybeSingle();
-
-      if (findUserError) throw findUserError;
-
-      if (existingUser) {
-        id_user = existingUser.id_user;
-        const updates: any = {};
-        if (existingUser.role !== "seller" && existingUser.role !== "admin") {
-          updates.role = "seller";
-        }
-        if (nama_pemilik) {
-          updates.nama_lengkap = nama_pemilik;
-        }
-        if (Object.keys(updates).length > 0) {
-          const { error: updateRoleError } = await supabase
-            .from("users")
-            .update(updates)
-            .eq("id_user", id_user);
-          if (updateRoleError) throw updateRoleError;
-        }
-      } else {
-        const generatedId = typeof crypto !== "undefined" ? crypto.randomUUID() : `u-${Math.random().toString(36).substr(2, 9)}`;
-        const generatedUsername = email.split("@")[0] + "_" + Math.random().toString(36).substr(2, 4);
-        const { error: createUserError } = await supabase
-          .from("users")
-          .insert({
-            id_user: generatedId,
-            username: generatedUsername,
-            email: email,
-            nama_lengkap: nama_pemilik || nm_store,
-            no_telp: no_telp,
-            password: "no-password-plain",
-            role: "seller",
-            avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=150&auto=format&fit=crop"
-          });
-
-        if (createUserError) throw createUserError;
-        id_user = generatedId;
-      }
-
-      const { data: existingSeller } = await supabase
-        .from("seller")
-        .select("id_seller")
-        .eq("id_user", id_user)
-        .maybeSingle();
-
-      if (existingSeller) {
-        throw new Error("Pengguna dengan email ini sudah terdaftar sebagai toko!");
-      }
-
-      const id_seller = typeof crypto !== "undefined" ? crypto.randomUUID() : `s-${Math.random().toString(36).substr(2, 9)}`;
-      const { error: insertStoreError } = await supabase
-        .from("seller")
-        .insert({
-          id_seller,
-          id_user,
-          nm_store,
-          deskripsi: deskripsi || `Selamat datang di ${nm_store}`,
-          logo_toko: logo_toko || "https://images.unsplash.com/photo-1544816155-12df9643f363?q=80&w=100&auto=format&fit=crop",
-          email,
-          no_telp,
-          addr,
-          nama_bank,
-          no_rek,
-          atas_nama_rek,
-          is_verified
-        });
-
-      if (insertStoreError) throw insertStoreError;
-
-      return {
-        id_seller,
-        id_user,
+      // Langsung ke Supabase (anon key) — jalan jika RLS users/seller sudah dimatikan
+      return await createStoreDirect(
         nm_store,
-        deskripsi,
-        logo_toko: logo_toko || "https://images.unsplash.com/photo-1544816155-12df9643f363?q=80&w=100&auto=format&fit=crop",
         email,
         no_telp,
+        deskripsi,
         addr,
         nama_bank,
         no_rek,
         atas_nama_rek,
-        created_at: new Date().toISOString(),
-        is_verified
-      };
-    } catch (err: any) {
-      console.error("sellerService.createStore failed:", err);
-      return null;
+        is_verified,
+        nama_pemilik,
+        logo_toko
+      );
+    } catch (directErr: unknown) {
+      const directMsg = errorToMessage(directErr);
+      console.warn("createStore direct failed, trying API:", directMsg);
+
+      try {
+        const apiRes = await fetch("/api/admin/stores", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nm_store,
+            email,
+            no_telp,
+            deskripsi,
+            addr,
+            nama_bank,
+            no_rek,
+            atas_nama_rek,
+            is_verified,
+            nama_pemilik,
+            logo_toko,
+          }),
+        });
+
+        const apiData = await apiRes.json();
+        if (apiRes.ok) {
+          return apiData as Seller;
+        }
+
+        const apiErr = (apiData as { error?: string }).error || "Gagal membuat toko baru.";
+        throw new Error(formatDbError(directErr, directMsg) || apiErr);
+      } catch (err: unknown) {
+        console.error("sellerService.createStore failed:", errorToMessage(err));
+        throw new Error(formatDbError(err, formatDbError(directErr, "Gagal membuat toko baru.")));
+      }
     }
   },
 
@@ -417,5 +551,137 @@ export const sellerService = {
       console.error("sellerService.deleteSeller failed:", err);
       return false;
     }
-  }
+  },
+
+  async getStoreStats(sellerId: string): Promise<StoreStats> {
+    const empty: StoreStats = {
+      productCount: 0,
+      followerCount: 0,
+      avgRating: 0,
+      reviewCount: 0,
+      totalSold: 0,
+      joinedAt: "",
+    };
+
+    if (isPlaceholder()) {
+      const stored = localStorage.getItem("pelum_products");
+      const products = stored ? (JSON.parse(stored) as { id_seller?: string }[]) : [];
+      const follows = JSON.parse(localStorage.getItem(IKUT_TOKO_KEY) || "[]") as { id_user: string; id_seller: string }[];
+      return {
+        ...empty,
+        productCount: products.filter((p) => p.id_seller === sellerId).length,
+        followerCount: follows.filter((f) => f.id_seller === sellerId).length,
+      };
+    }
+
+    try {
+      const [productRes, followerRes, reviewRes, sellerRes, orderRes] = await Promise.all([
+        supabase.from("produk").select("id_produk", { count: "exact", head: true }).eq("id_seller", sellerId),
+        supabase.from("ikut_toko").select("*", { count: "exact", head: true }).eq("id_seller", sellerId),
+        supabase.from("review_toko").select("rating").eq("id_seller", sellerId),
+        supabase.from("seller").select("created_at").eq("id_seller", sellerId).maybeSingle(),
+        supabase.from("order").select("id_order").eq("id_seller", sellerId).eq("stat_order", "selesai"),
+      ]);
+
+      const ratings = (reviewRes.data || []).map((r) => Number(r.rating));
+      const avgRating =
+        ratings.length > 0
+          ? Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 10) / 10
+          : 0;
+
+      let totalSold = 0;
+      const orderIds = (orderRes.data || []).map((o) => o.id_order);
+      if (orderIds.length > 0) {
+        const { data: items } = await supabase
+          .from("order_item")
+          .select("qty_orderitem")
+          .in("id_order", orderIds);
+        totalSold = (items || []).reduce((sum, item) => sum + Number(item.qty_orderitem), 0);
+      }
+
+      return {
+        productCount: productRes.count ?? 0,
+        followerCount: followerRes.count ?? 0,
+        avgRating,
+        reviewCount: ratings.length,
+        totalSold,
+        joinedAt: (sellerRes.data?.created_at as string) || "",
+      };
+    } catch (err) {
+      console.error("sellerService.getStoreStats failed:", err);
+      return empty;
+    }
+  },
+
+  async isFollowingStore(userId: string, sellerId: string): Promise<boolean> {
+    if (isPlaceholder()) {
+      const follows = JSON.parse(localStorage.getItem(IKUT_TOKO_KEY) || "[]") as { id_user: string; id_seller: string }[];
+      return follows.some((f) => f.id_user === userId && f.id_seller === sellerId);
+    }
+
+    try {
+      const res = await fetch(
+        `/api/toko/follow?userId=${encodeURIComponent(userId)}&sellerId=${encodeURIComponent(sellerId)}`
+      );
+      const data = await res.json();
+      if (!res.ok) return false;
+      return !!data.following;
+    } catch (err) {
+      console.error("sellerService.isFollowingStore failed:", err);
+      return false;
+    }
+  },
+
+  async followStore(userId: string, sellerId: string): Promise<{ ok: boolean; error?: string }> {
+    if (isPlaceholder()) {
+      const follows = JSON.parse(localStorage.getItem(IKUT_TOKO_KEY) || "[]") as { id_user: string; id_seller: string }[];
+      if (!follows.some((f) => f.id_user === userId && f.id_seller === sellerId)) {
+        follows.push({ id_user: userId, id_seller: sellerId });
+        localStorage.setItem(IKUT_TOKO_KEY, JSON.stringify(follows));
+      }
+      return { ok: true };
+    }
+
+    try {
+      const res = await fetch("/api/toko/follow", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, sellerId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { ok: false, error: data.error || "Gagal mengikuti toko." };
+      }
+      return { ok: true };
+    } catch (err) {
+      console.error("sellerService.followStore failed:", err);
+      return { ok: false, error: "Gagal menghubungi server." };
+    }
+  },
+
+  async unfollowStore(userId: string, sellerId: string): Promise<{ ok: boolean; error?: string }> {
+    if (isPlaceholder()) {
+      const follows = JSON.parse(localStorage.getItem(IKUT_TOKO_KEY) || "[]") as { id_user: string; id_seller: string }[];
+      localStorage.setItem(
+        IKUT_TOKO_KEY,
+        JSON.stringify(follows.filter((f) => !(f.id_user === userId && f.id_seller === sellerId)))
+      );
+      return { ok: true };
+    }
+
+    try {
+      const res = await fetch(
+        `/api/toko/follow?userId=${encodeURIComponent(userId)}&sellerId=${encodeURIComponent(sellerId)}`,
+        { method: "DELETE" }
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        return { ok: false, error: data.error || "Gagal berhenti mengikuti toko." };
+      }
+      return { ok: true };
+    } catch (err) {
+      console.error("sellerService.unfollowStore failed:", err);
+      return { ok: false, error: "Gagal menghubungi server." };
+    }
+  },
 };

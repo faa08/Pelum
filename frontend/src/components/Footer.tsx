@@ -6,14 +6,16 @@ import Link from "next/link";
 
 const COMPANY_LINKS = [
   { label: "Tentang Kami", href: "/tentang" },
+  { label: "Model Konsinyasi", href: "/bantuan/konsinyasi" },
   { label: "Hubungi Kami", href: "/kontak" },
   { label: "Kebijakan Privasi", href: "/kebijakan-privasi" },
 ];
 
 const HELP_LINKS = [
   { label: "Pusat Bantuan", href: "/bantuan" },
-  { label: "Syarat & Ketentuan", href: "/bantuan/syarat-ketentuan" },
-  { label: "Informasi Pengiriman", href: "/bantuan/info-pengiriman" },
+  { label: "Pembayaran & Pickup", href: "/bantuan/pembayaran" },
+  { label: "Pengiriman & Chat", href: "/bantuan/info-pengiriman" },
+  { label: "Kebijakan Return", href: "/bantuan/kebijakan-return" },
   { label: "FAQ", href: "/bantuan/faq" },
 ];
 
@@ -46,7 +48,7 @@ export default function Footer({ isMinimalist = false }: FooterProps) {
               <span className="logo-text-bold-small">Pelataran UMKM</span>
             </div>
             <p className="footer-desc-custom">
-              Platform e-commerce khusus produk UMKM Indonesia. Mari bersama memajukan ekonomi kerakyatan melalui produk berkualitas hasil karya anak bangsa.
+              Platform titip jual (konsinyasi) produk UMKM Indonesia. Kami urus penjualan, pembayaran, dan pengiriman — UMKM fokus pada karya terbaiknya.
             </p>
             <div className="footer-social-custom">
               <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" className="social-btn-custom" aria-label="Instagram">

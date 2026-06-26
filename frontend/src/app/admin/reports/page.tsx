@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { adminService } from "@/backend/adminService";
 
 interface ReportChartData {
   label: string;
@@ -81,21 +82,32 @@ export default function AdminReportsPage() {
   const [chartData, setChartData] = useState<ReportChartData[]>([]);
   const [topStores, setTopStores] = useState<TopStoreData[]>([]);
 
-  // Simulation loading data from Backend / DB
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setStats({
-        totalRevenue: 24500000,
-        activeSellers: 8,
-        totalOrders: 23,
-        customerRating: 4.8
-      });
-      setChartData(MOCK_CHART_DATA);
-      setTopStores(MOCK_TOP_STORES);
+    async function loadReports() {
+      setIsLoading(true);
+      const [statsData, chart, stores] = await Promise.all([
+        adminService.getReportStats(),
+        adminService.getWeeklyRevenueChart(),
+        adminService.getTopStores(5),
+      ]);
+      setStats(statsData);
+      const maxAmount = Math.max(...chart.map((c) => c.amount), 1);
+      setChartData(
+        chart.map((c) => ({
+          label: c.label,
+          height: `${Math.round((c.amount / maxAmount) * 100)}%`,
+          revenue: `Rp ${c.amount.toLocaleString("id-ID")}`,
+        }))
+      );
+      setTopStores(
+        stores.map((s) => ({
+          ...s,
+          pesanan: String(s.pesanan),
+        }))
+      );
       setIsLoading(false);
-    }, 1500);
-
-    return () => clearTimeout(timer);
+    }
+    loadReports();
   }, []);
 
   return (

@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { getOrderPaymentDisplay, type OrderPaymentKind } from "@/lib/checkoutConstants";
 
 const isPlaceholder = () => {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -33,6 +34,11 @@ export interface AdminOrder {
   productImg: string;
   total: number;
   status: string;
+  paymentLabel: string;
+  paymentDesc: string;
+  paymentKind: OrderPaymentKind;
+  chatId?: string | null;
+  needsShippingChat: boolean;
 }
 
 export type AdminShipStatus = "Perlu Dikirim" | "Sedang Dikirim" | "Selesai";
@@ -50,6 +56,9 @@ export interface AdminShipmentOrder {
   courier?: string;
   resi?: string;
   eta?: string;
+  paymentLabel: string;
+  paymentDesc: string;
+  paymentKind: OrderPaymentKind;
 }
 
 function mapSaldoStatus(stat: string): "Berhasil" | "Pending" | "Gagal" {
@@ -88,7 +97,16 @@ function formatOrderId(id: string) {
 }
 
 function parseProductImg(img?: string | null): string {
-  if (!img || img.startsWith("[")) return "/product-keramik.png";
+  if (!img) return "/product-keramik.png";
+  if (img.startsWith("[")) {
+    try {
+      const arr = JSON.parse(img) as unknown[];
+      const first = arr.map((x) => String(x ?? "").trim()).find(Boolean);
+      return first || "/product-keramik.png";
+    } catch {
+      return "/product-keramik.png";
+    }
+  }
   return img;
 }
 
@@ -282,14 +300,16 @@ export const adminService = {
       const { data, error } = await supabase
         .from("order")
         .select(`
-          id_order, stat_order, total_hrg, created_at,
+          id_order, stat_order, total_hrg, created_at, tipe_pembayaran, catatan,
           users ( nama_lengkap ),
           seller ( nm_store ),
           order_item (
             qty_orderitem, hrg_saat_beli,
             produk ( nama_produk, img )
           ),
-          payment ( stat_pay )
+          payment ( stat_pay, metod_pay ),
+          pengiriman ( kurir ),
+          order_chat ( id_chat )
         `)
         .order("created_at", { ascending: false })
         .limit(100);
@@ -307,7 +327,20 @@ export const adminService = {
             ? firstItem.produk[0]
             : firstItem.produk
           : null;
+        const pengiriman = Array.isArray(o.pengiriman) ? o.pengiriman[0] : o.pengiriman;
         const payment = Array.isArray(o.payment) ? o.payment[0] : o.payment;
+        const orderChat = Array.isArray(o.order_chat) ? o.order_chat[0] : o.order_chat;
+        const paymentInfo = getOrderPaymentDisplay({
+          tipe_pembayaran: o.tipe_pembayaran,
+          metod_pay: payment?.metod_pay,
+          kurir: pengiriman?.kurir,
+          catatan: o.catatan,
+        });
+        const status = mapOrderStatus(o.stat_order, payment?.stat_pay);
+        const needsShippingChat =
+          paymentInfo.kind === "digital" &&
+          payment?.stat_pay === "success" &&
+          (status === "Perlu Dikirim" || status === "Dikirim");
         const buyerName = user?.nama_lengkap || "Pembeli";
         const totalQty = items.reduce((s: number, i) => s + (i.qty_orderitem || 1), 0);
 
@@ -325,12 +358,47 @@ export const adminService = {
               : `${firstItem?.qty_orderitem || 1} pcs`,
           productImg: parseProductImg(produk?.img),
           total: Number(o.total_hrg),
-          status: mapOrderStatus(o.stat_order, payment?.stat_pay),
+          status,
+          paymentLabel: paymentInfo.label,
+          paymentDesc: paymentInfo.desc,
+          paymentKind: paymentInfo.kind,
+          chatId: orderChat?.id_chat || null,
+          needsShippingChat,
         };
       });
     } catch (err) {
       console.error("adminService.getOrders failed:", err);
       return [];
+    }
+  },
+
+  async getPendingShippingChatCount(): Promise<number> {
+    if (isPlaceholder()) return 0;
+    try {
+      const { data, error } = await supabase
+        .from("order")
+        .select(`
+          id_order, stat_order, tipe_pembayaran,
+          payment ( stat_pay ),
+          pengiriman ( kurir )
+        `)
+        .eq("tipe_pembayaran", "digital")
+        .in("stat_order", ["diproses", "dikirim", "pending"]);
+
+      if (error || !data) return 0;
+
+      return data.filter((o) => {
+        const payment = Array.isArray(o.payment) ? o.payment[0] : o.payment;
+        const pengiriman = Array.isArray(o.pengiriman) ? o.pengiriman[0] : o.pengiriman;
+        const pay = getOrderPaymentDisplay({
+          tipe_pembayaran: o.tipe_pembayaran,
+          metod_pay: payment?.metod_pay,
+          kurir: pengiriman?.kurir,
+        });
+        return pay.kind === "digital" && payment?.stat_pay === "success";
+      }).length;
+    } catch {
+      return 0;
     }
   },
 
@@ -356,7 +424,7 @@ export const adminService = {
       const { data, error } = await supabase
         .from("order")
         .select(`
-          id_order, stat_order, created_at,
+          id_order, stat_order, created_at, tipe_pembayaran, catatan,
           users ( nama_lengkap ),
           seller ( nm_store ),
           alamat ( detail_alamat, kota, provinsi, kode_pos ),
@@ -364,7 +432,7 @@ export const adminService = {
             qty_orderitem,
             produk ( nama_produk )
           ),
-          payment ( stat_pay ),
+          payment ( stat_pay, metod_pay ),
           pengiriman ( kurir, no_resi, estimasi_tiba, stat_kirim )
         `)
         .not("stat_order", "eq", "dibatalkan")
@@ -386,6 +454,13 @@ export const adminService = {
           const alamat = Array.isArray(o.alamat) ? o.alamat[0] : o.alamat;
           const items = o.order_item || [];
           const pengiriman = Array.isArray(o.pengiriman) ? o.pengiriman[0] : o.pengiriman;
+          const payment = Array.isArray(o.payment) ? o.payment[0] : o.payment;
+          const paymentInfo = getOrderPaymentDisplay({
+            tipe_pembayaran: o.tipe_pembayaran,
+            metod_pay: payment?.metod_pay,
+            kurir: pengiriman?.kurir,
+            catatan: o.catatan,
+          });
           const firstItem = items[0];
           const produk = firstItem
             ? Array.isArray(firstItem.produk)
@@ -412,10 +487,214 @@ export const adminService = {
             eta: pengiriman?.estimasi_tiba
               ? formatDateId(pengiriman.estimasi_tiba)
               : undefined,
+            paymentLabel: paymentInfo.label,
+            paymentDesc: paymentInfo.desc,
+            paymentKind: paymentInfo.kind,
           };
         });
     } catch (err) {
       console.error("adminService.getShipments failed:", err);
+      return [];
+    }
+  },
+
+  async getTransactions(): Promise<
+    {
+      id: string;
+      date: string;
+      buyer: string;
+      email: string;
+      avatar: string;
+      amount: number;
+      status: string;
+    }[]
+  > {
+    if (isPlaceholder()) return [];
+
+    try {
+      const { data, error } = await supabase
+        .from("order")
+        .select(`
+          id_order, created_at, total_hrg, stat_order,
+          users ( nama_lengkap, email )
+        `)
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+      if (error) throw error;
+
+      return (data || []).map((item: Record<string, unknown>) => {
+        const user = Array.isArray(item.users) ? item.users[0] : item.users;
+        const u = user as { nama_lengkap?: string; email?: string } | null;
+        const buyer = u?.nama_lengkap || "Tanpa Nama";
+        return {
+          id: item.id_order as string,
+          date: formatDateId(item.created_at as string, true),
+          buyer,
+          email: u?.email || "-",
+          amount: Number(item.total_hrg),
+          status: item.stat_order as string,
+          avatar: initials(buyer),
+        };
+      });
+    } catch (err) {
+      console.error("adminService.getTransactions failed:", err);
+      return [];
+    }
+  },
+
+  async getReportStats(): Promise<{
+    totalRevenue: number;
+    activeSellers: number;
+    totalOrders: number;
+    customerRating: number;
+  }> {
+    if (isPlaceholder()) {
+      return { totalRevenue: 0, activeSellers: 0, totalOrders: 0, customerRating: 0 };
+    }
+
+    try {
+      const [{ count: sellerCount }, { count: orderCount }, { data: doneOrders }, { data: reviews }] =
+        await Promise.all([
+          supabase.from("seller").select("*", { count: "exact", head: true }),
+          supabase.from("order").select("*", { count: "exact", head: true }),
+          supabase.from("order").select("total_hrg").eq("stat_order", "selesai"),
+          supabase.from("review").select("rating"),
+        ]);
+
+      const totalRevenue =
+        doneOrders?.reduce((s, o) => s + Number(o.total_hrg), 0) ?? 0;
+      const customerRating =
+        reviews?.length
+          ? reviews.reduce((s, r) => s + Number(r.rating), 0) / reviews.length
+          : 0;
+
+      return {
+        totalRevenue,
+        activeSellers: sellerCount ?? 0,
+        totalOrders: orderCount ?? 0,
+        customerRating: Math.round(customerRating * 10) / 10,
+      };
+    } catch (err) {
+      console.error("adminService.getReportStats failed:", err);
+      return { totalRevenue: 0, activeSellers: 0, totalOrders: 0, customerRating: 0 };
+    }
+  },
+
+  async getWeeklyRevenueChart(): Promise<{ label: string; amount: number }[]> {
+    if (isPlaceholder()) return [];
+
+    try {
+      const since = new Date();
+      since.setDate(since.getDate() - 6);
+      since.setHours(0, 0, 0, 0);
+
+      const { data, error } = await supabase
+        .from("order")
+        .select("total_hrg, created_at, stat_order")
+        .gte("created_at", since.toISOString());
+
+      if (error) throw error;
+
+      const dayNames = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
+      const buckets = new Map<string, number>();
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(since);
+        d.setDate(since.getDate() + i);
+        buckets.set(dayNames[d.getDay()], 0);
+      }
+
+      for (const row of data || []) {
+        if (row.stat_order === "dibatalkan") continue;
+        const d = new Date(row.created_at);
+        const key = dayNames[d.getDay()];
+        buckets.set(key, (buckets.get(key) || 0) + Number(row.total_hrg));
+      }
+
+      return Array.from(buckets.entries()).map(([label, amount]) => ({ label, amount }));
+    } catch (err) {
+      console.error("adminService.getWeeklyRevenueChart failed:", err);
+      return [];
+    }
+  },
+
+  async getTopStores(limit = 5): Promise<
+    {
+      nama: string;
+      lokasi: string;
+      kategori: string;
+      pesanan: number;
+      omzet: number;
+      rating: number;
+      status: string;
+      logo: string;
+    }[]
+  > {
+    if (isPlaceholder()) return [];
+
+    try {
+      const { data: orders, error } = await supabase
+        .from("order")
+        .select(`
+          total_hrg, stat_order,
+          seller ( id_seller, nm_store, addr, is_verified )
+        `)
+        .neq("stat_order", "dibatalkan");
+
+      if (error) throw error;
+
+      const storeMap = new Map<
+        string,
+        { nama: string; lokasi: string; kategori: string; pesanan: number; omzet: number }
+      >();
+
+      for (const o of orders || []) {
+        const seller = Array.isArray(o.seller) ? o.seller[0] : o.seller;
+        if (!seller?.id_seller) continue;
+        const cur = storeMap.get(seller.id_seller) || {
+          nama: seller.nm_store || "Toko",
+          lokasi: seller.addr?.split(",")[0] || "-",
+          kategori: "UMKM",
+          pesanan: 0,
+          omzet: 0,
+        };
+        cur.pesanan += 1;
+        cur.omzet += Number(o.total_hrg);
+        storeMap.set(seller.id_seller, cur);
+      }
+
+      const sellerIds = Array.from(storeMap.keys());
+      const ratings = new Map<string, number>();
+      if (sellerIds.length) {
+        const { data: storeReviews } = await supabase
+          .from("review_toko")
+          .select("id_seller, rating")
+          .in("id_seller", sellerIds);
+        const sums = new Map<string, { total: number; count: number }>();
+        for (const r of storeReviews || []) {
+          const s = sums.get(r.id_seller) || { total: 0, count: 0 };
+          s.total += Number(r.rating);
+          s.count += 1;
+          sums.set(r.id_seller, s);
+        }
+        for (const [id, s] of sums) {
+          ratings.set(id, Math.round((s.total / s.count) * 10) / 10);
+        }
+      }
+
+      return Array.from(storeMap.entries())
+        .map(([id, s]) => ({
+          ...s,
+          pesanan: s.pesanan,
+          omzet: s.omzet,
+          rating: ratings.get(id) || 4.5,
+          status: "Aktif",
+          logo: "/product-keramik.png",
+        }))
+        .sort((a, b) => b.omzet - a.omzet)
+        .slice(0, limit);
+    } catch (err) {
+      console.error("adminService.getTopStores failed:", err);
       return [];
     }
   },

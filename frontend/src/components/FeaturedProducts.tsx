@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Image from "next/image";
 import { ShoppingCart, Star, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { productService } from "@/backend/productService";
 import { cartService } from "@/backend/cartService";
 import { authService } from "@/backend/authService";
+import { productToCard, ProductGridImage } from "@/lib/productUi";
 
 function formatPrice(price: number) {
   return `Rp ${price.toLocaleString("id-ID")}`;
@@ -23,18 +23,15 @@ export default function FeaturedProducts({ searchQuery = "" }: FeaturedProductsP
   useEffect(() => {
     async function loadProducts() {
       try {
-        const data = await productService.getProducts({ publicOnly: true, limit: 10 });
-        const mapped = data.map((p: any) => ({
-          id: p.id_produk,
-          slug: p.slug || p.id_produk,
-          name: p.nama_produk,
-          price: p.harga,
-          image: p.img || "/product-keramik.png",
-          category: p.nama_brand || p.category || "UMKM Lokal",
-          rating: 4.8,
-          sold: Math.floor(Math.random() * 25) + 5,
-          badge: p.stok === 0 ? "Habis" : "Unggulan",
-        }));
+        const data = await productService.getProducts({ publicOnly: true, limit: 10, includeImages: true });
+        const stats = await productService.getProductStats(data.map((p) => p.id_produk));
+        const mapped = data.map((p) => {
+          const card = productToCard(p, stats[p.id_produk]);
+          return {
+            ...card,
+            badge: p.stok === 0 ? "Habis" : "Unggulan",
+          };
+        });
         setProducts(mapped);
       } catch (err) {
         console.error("Failed to load featured products:", err);
@@ -103,13 +100,7 @@ export default function FeaturedProducts({ searchQuery = "" }: FeaturedProductsP
               >
                 <Link href={`/produk/${product.slug}`}>
                   <div className="product-image-container">
-                    <Image
-                      src={product.image}
-                      alt={product.name}
-                      fill
-                      style={{ objectFit: "cover" }}
-                      sizes="(max-width: 768px) 50vw, 220px"
-                    />
+                    <ProductGridImage src={product.image} alt={product.name} sizes="(max-width: 768px) 50vw, 220px" />
                     {product.badge && (
                       <span className="product-badge-orange">
                         {product.badge}
@@ -127,11 +118,11 @@ export default function FeaturedProducts({ searchQuery = "" }: FeaturedProductsP
                           window.location.href = "/masuk";
                           return;
                         }
-                        const success = await cartService.addToCart(user.id_user, product.id, 1);
-                        if (success) {
+                        const result = await cartService.addToCart(user.id_user, product.id, 1);
+                        if (result.ok) {
                           alert("Produk berhasil ditambahkan ke keranjang!");
                         } else {
-                          alert("Gagal menambahkan ke keranjang.");
+                          alert(result.error || "Gagal menambahkan ke keranjang.");
                         }
                       }}
                     >
