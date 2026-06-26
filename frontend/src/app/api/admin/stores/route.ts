@@ -52,13 +52,15 @@ export async function POST(request: NextRequest) {
 
     let id_user = "";
 
-    const { data: existingUser, error: findUserError } = await admin
+    const { data: existingUserRaw, error: findUserError } = await admin
       .from("users")
       .select("id_user, role")
       .eq("email", email)
-      .maybeSingle<UserRow>();
+      .maybeSingle();
 
     if (findUserError) throw findUserError;
+
+    const existingUser = existingUserRaw as UserRow | null;
 
     if (existingUser) {
       id_user = existingUser.id_user;
@@ -92,11 +94,13 @@ export async function POST(request: NextRequest) {
       id_user = generatedId;
     }
 
-    const { data: existingSeller } = await admin
+    const { data: existingSellerRaw } = await admin
       .from("seller")
       .select("id_seller")
       .eq("id_user", id_user)
-      .maybeSingle<SellerRow>();
+      .maybeSingle();
+
+    const existingSeller = existingSellerRaw as SellerRow | null;
 
     if (existingSeller) {
       return NextResponse.json(
