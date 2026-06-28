@@ -2,6 +2,7 @@ import { supabase } from "./supabase";
 import { DEFAULT_AVATAR } from "@/lib/avatar";
 import { mapRowToUser } from "@/lib/auth/mapUser";
 import { apiFetch } from "@/lib/api-client";
+import { formatSupabaseAuthError } from "@/lib/formatError";
 
 export const USER_UPDATED_EVENT = "pelum-user-updated";
 
@@ -78,9 +79,19 @@ async function syncProfileFromSession(
     },
     body: JSON.stringify({ metadata }),
   });
-  const data = await res.json();
-  if (!res.ok || !data.user) return null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.user) {
+    const apiErr = typeof data.error === "string" ? data.error : null;
+    throw new Error(apiErr || "Gagal menyimpan profil pengguna. Coba masuk atau hubungi admin.");
+  }
   return data.user as User;
+}
+
+function authRedirectOrigin(): string {
+  const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "");
+  if (fromEnv) return fromEnv;
+  if (typeof window !== "undefined") return window.location.origin;
+  return "";
 }
 
 export const authService = {
@@ -262,13 +273,14 @@ export const authService = {
       throw new Error("Kata sandi minimal 6 karakter.");
     }
 
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const origin = authRedirectOrigin();
+    const redirectTo = origin ? `${origin}/auth/callback` : undefined;
 
     const { data, error } = await supabase.auth.signUp({
       email: normalizedEmail,
       password,
       options: {
-        emailRedirectTo: `${origin}/auth/callback`,
+        ...(redirectTo ? { emailRedirectTo: redirectTo } : {}),
         data: {
           username,
           nama_lengkap: username,
@@ -279,10 +291,12 @@ export const authService = {
     });
 
     if (error) {
-      if (error.message.toLowerCase().includes("already registered")) {
-        throw new Error("Email sudah terdaftar! Silakan masuk atau gunakan email lain.");
-      }
-      throw new Error(error.message);
+      throw new Error(formatSupabaseAuthError(error));
+    }
+
+    const identities = data.user?.identities;
+    if (data.user && (!identities || identities.length === 0)) {
+      throw new Error("Email sudah terdaftar! Silakan masuk atau gunakan email lain.");
     }
 
     if (data.session?.user) {
@@ -299,6 +313,27 @@ export const authService = {
     }
 
     return { user: null, needsEmailVerification: true, email: normalizedEmail };
+  },
+
+  async resendVerificationEmail(email: string): Promise<{ ok: boolean; error?: string }> {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (isPlaceholder()) {
+      return { ok: false, error: "Supabase belum dikonfigurasi." };
+    }
+
+    const origin = authRedirectOrigin();
+    const redirectTo = origin ? `${origin}/auth/callback` : undefined;
+
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email: normalizedEmail,
+      ...(redirectTo ? { options: { emailRedirectTo: redirectTo } } : {}),
+    });
+
+    if (error) {
+      return { ok: false, error: formatSupabaseAuthError(error) };
+    }
+    return { ok: true };
   },
 
   async sendPasswordResetEmail(email: string): Promise<boolean> {

@@ -2,10 +2,19 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { AlertCircle, MessageCircle, Store } from "lucide-react";
+import { AlertCircle, MessageCircle, Store, MapPin } from "lucide-react";
 import { adminService, type AdminOrder } from "@/backend/adminService";
 import { shippingService } from "@/backend/shippingService";
+import ShippingMapModal from "@/components/ShippingMapModal";
 import { getPaymentBadgeClass } from "@/lib/checkoutConstants";
+
+type MapViewState = {
+  title: string;
+  addressText: string;
+  lat: number | null;
+  lng: number | null;
+  isPickup: boolean;
+} | null;
 
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<AdminOrder[]>([]);
@@ -14,6 +23,7 @@ export default function AdminOrdersPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("Semua");
   const [confirmingPickup, setConfirmingPickup] = useState<string | null>(null);
+  const [mapView, setMapView] = useState<MapViewState>(null);
 
   const tabs = ["Semua", "Belum Bayar", "Perlu Dikirim", "Dikirim", "Selesai", "Dibatalkan"];
 
@@ -81,12 +91,22 @@ export default function AdminOrdersPage() {
       o.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       o.buyer.toLowerCase().includes(searchTerm.toLowerCase()) ||
       o.storeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      o.productName.toLowerCase().includes(searchTerm.toLowerCase());
+      o.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      o.shippingAddress.toLowerCase().includes(searchTerm.toLowerCase());
     return matchTab && matchSearch;
   });
 
   return (
     <div className="space-y-8">
+      <ShippingMapModal
+        open={!!mapView}
+        onClose={() => setMapView(null)}
+        title={mapView?.title || "Lokasi Pengiriman"}
+        addressText={mapView?.addressText || ""}
+        lat={mapView?.lat}
+        lng={mapView?.lng}
+        isPickup={mapView?.isPickup}
+      />
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h2 className="font-headline text-3xl font-bold text-[#1F1B18]">Manajemen Pesanan</h2>
@@ -140,7 +160,7 @@ export default function AdminOrdersPage() {
           <div>
             <p className="font-bold">{needChatCount} pesanan QRIS menunggu chat pengiriman</p>
             <p className="text-xs mt-0.5 text-indigo-700">
-              Setelah pembeli bayar QRIS, admin wajib chat pembeli untuk koordinasi alamat, kurir, dan jadwal kirim.
+              Alamat pengiriman pembeli tampil di kolom &quot;Alamat&quot;. Gunakan chat untuk konfirmasi jadwal & kurir.
             </p>
             <Link href="/admin/chat?tab=shipping" className="inline-block mt-2 text-xs font-bold text-[#1D4ED8] hover:underline">
               Buka Pusat Chat Pengiriman →
@@ -186,7 +206,7 @@ export default function AdminOrdersPage() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-[#F5F3F0] border-b border-[#EAE5E0]">
-                  {["ID Pesanan", "Tanggal", "Toko UMKM", "Pelanggan", "Produk", "Total", "Pembayaran", "Status"].map((h) => (
+                  {["ID Pesanan", "Tanggal", "Toko UMKM", "Pelanggan", "Produk", "Total", "Alamat", "Pembayaran", "Status"].map((h) => (
                     <th key={h} className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-[#5C5550]">
                       {h}
                     </th>
@@ -210,10 +230,15 @@ export default function AdminOrdersPage() {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-[#F5F3F0] rounded overflow-hidden border border-[#EAE5E0] flex-shrink-0">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={order.productImg}
                             alt={order.productName}
                             className="w-full h-full object-cover"
+                            onError={(e) => {
+                              e.currentTarget.onerror = null;
+                              e.currentTarget.src = "/product-keramik.png";
+                            }}
                           />
                         </div>
                         <div>
@@ -226,6 +251,48 @@ export default function AdminOrdersPage() {
                     </td>
                     <td className="px-6 py-4 font-bold text-sm text-[#1D4ED8]">
                       Rp {order.total.toLocaleString("id-ID")}
+                    </td>
+                    <td className="px-6 py-4 max-w-[220px]">
+                      {order.paymentKind === "pickup" ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setMapView({
+                              title: `Pickup — ${order.buyer}`,
+                              addressText: order.shippingAddress,
+                              lat: order.shipLat,
+                              lng: order.shipLng,
+                              isPickup: true,
+                            })
+                          }
+                          className="flex gap-2 text-left group"
+                        >
+                          <MapPin size={14} className="text-[#1D4ED8] flex-shrink-0 mt-0.5 group-hover:scale-110 transition" />
+                          <span className="text-[10px] text-[#1D4ED8] font-bold group-hover:underline">
+                            Lihat lokasi toko
+                          </span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setMapView({
+                              title: `Alamat — ${order.buyer}`,
+                              addressText: order.shippingAddress,
+                              lat: order.shipLat,
+                              lng: order.shipLng,
+                              isPickup: false,
+                            })
+                          }
+                          className="flex gap-2 text-left group w-full"
+                        >
+                          <MapPin size={14} className="text-[#1D4ED8] flex-shrink-0 mt-0.5 group-hover:scale-110 transition" />
+                          <p className="text-[10px] text-[#5C5550] leading-snug whitespace-pre-line font-medium group-hover:text-[#1D4ED8]">
+                            {order.shippingAddress}
+                          </p>
+                          <span className="text-[9px] font-bold text-[#1D4ED8] mt-0.5 block">Klik untuk lihat di peta →</span>
+                        </button>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <span
@@ -296,7 +363,7 @@ export default function AdminOrdersPage() {
                 ))}
                 {filteredOrders.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="py-12 text-center text-[#8E8680] text-sm font-semibold">
+                    <td colSpan={9} className="py-12 text-center text-[#8E8680] text-sm font-semibold">
                       {orders.length === 0
                         ? "Belum ada pesanan di database."
                         : "Tidak ada pesanan ditemukan."}

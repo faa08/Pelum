@@ -140,7 +140,7 @@ export default function AdminBannersPage() {
       <header>
         <h2 className="font-headline text-3xl font-bold text-[#1F1B18]">Banner & Hero</h2>
         <p className="text-sm text-[#5C5550] mt-1">
-          Edit slider beranda dan banner halaman kategori (gambar + teks).
+          Edit slider beranda dan banner halaman kategori — unggah gambar dari perangkat Anda (tanpa perlu URL).
         </p>
       </header>
 
@@ -226,15 +226,55 @@ export default function AdminBannersPage() {
 function ImagePreview({ url }: { url: string }) {
   if (!url) {
     return (
-      <div className="w-full h-36 bg-[#F5F3F0] rounded-lg border border-dashed border-[#D5CFC9] flex items-center justify-center text-[#8E8680] text-xs gap-2">
-        <ImageIcon size={18} />
-        Belum ada gambar
+      <div className="w-full h-40 bg-[#F5F3F0] rounded-lg border border-dashed border-[#D5CFC9] flex flex-col items-center justify-center text-[#8E8680] text-xs gap-2">
+        <ImageIcon size={22} />
+        <span>Belum ada gambar — unggah dari perangkat Anda</span>
       </div>
     );
   }
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={url} alt="Preview banner" className="w-full h-36 object-cover rounded-lg border border-[#EAE5E0]" />
+    <img src={url} alt="Preview banner" className="w-full h-40 object-cover rounded-lg border border-[#EAE5E0]" />
+  );
+}
+
+function BannerImageUpload({
+  imageUrl,
+  uploading,
+  onFile,
+}: {
+  imageUrl: string;
+  uploading: boolean;
+  onFile: (file: File) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <ImagePreview url={imageUrl} />
+      <label
+        className={`relative flex flex-col items-center justify-center w-full h-24 rounded-lg border-2 border-dashed transition cursor-pointer ${
+          uploading
+            ? "border-[#1D4ED8] bg-[#EFF6FF] opacity-70 pointer-events-none"
+            : "border-[#D5CFC9] bg-[#FAFAF8] hover:border-[#1D4ED8] hover:bg-[#EFF6FF]"
+        }`}
+      >
+        <input
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          className="absolute inset-0 opacity-0 cursor-pointer"
+          disabled={uploading}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) onFile(file);
+            e.target.value = "";
+          }}
+        />
+        <ImageIcon size={20} className="text-[#8E8680] mb-1" />
+        <span className="text-xs font-bold text-[#5C5550]">
+          {uploading ? "Mengunggah..." : imageUrl ? "Ganti Gambar" : "Pilih Gambar Banner"}
+        </span>
+        <span className="text-[10px] text-[#8E8680] mt-0.5">JPG, PNG, atau WebP · maks. 3MB</span>
+      </label>
+    </div>
   );
 }
 
@@ -275,6 +315,10 @@ function HomeSlideForm({
       className="bg-white border border-[#EAE5E0] rounded-xl p-6 shadow-sm space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
+        if (!form.image_url?.trim()) {
+          alert("Unggah gambar banner terlebih dahulu.");
+          return;
+        }
         const id = form.id_banner.startsWith("draft-") ? undefined : form.id_banner;
         onSave({
           id_banner: id,
@@ -303,33 +347,13 @@ function HomeSlideForm({
         )}
       </div>
 
-      <ImagePreview url={form.image_url} />
+      <BannerImageUpload
+        imageUrl={form.image_url}
+        uploading={uploading}
+        onFile={(file) => void handleFile(file)}
+      />
 
       <div className="grid md:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-[10px] font-bold uppercase text-[#8E8680] mb-1">Upload Gambar</label>
-          <input
-            type="file"
-            accept="image/*"
-            className="text-xs w-full"
-            disabled={uploading}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) void handleFile(file);
-            }}
-          />
-          {uploading && <p className="text-[10px] text-[#8E8680] mt-1">Mengunggah...</p>}
-        </div>
-        <div>
-          <label className="block text-[10px] font-bold uppercase text-[#8E8680] mb-1">URL Gambar</label>
-          <input
-            className={inputClass}
-            value={form.image_url}
-            onChange={(e) => setForm({ ...form, image_url: e.target.value })}
-            placeholder="/hero-banner.png atau https://..."
-            required
-          />
-        </div>
         <div>
           <label className="block text-[10px] font-bold uppercase text-[#8E8680] mb-1">Badge</label>
           <input className={inputClass} value={form.badge || ""} onChange={(e) => setForm({ ...form, badge: e.target.value })} />
@@ -406,6 +430,10 @@ function CategoryBannerForm({
       className="bg-white border border-[#EAE5E0] rounded-xl p-6 shadow-sm space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
+        if (!form.image_url?.trim()) {
+          alert("Unggah gambar banner terlebih dahulu.");
+          return;
+        }
         const id = form.id_banner.startsWith("draft-") ? undefined : form.id_banner;
         onSave({
           id_banner: id,
@@ -435,32 +463,13 @@ function CategoryBannerForm({
         </select>
       </div>
 
-      <ImagePreview url={form.image_url} />
+      <BannerImageUpload
+        imageUrl={form.image_url}
+        uploading={uploading}
+        onFile={(file) => void handleFile(file)}
+      />
 
       <div className="grid md:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-[10px] font-bold uppercase text-[#8E8680] mb-1">Upload Gambar</label>
-          <input
-            type="file"
-            accept="image/*"
-            className="text-xs w-full"
-            disabled={uploading}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) void handleFile(file);
-            }}
-          />
-          {uploading && <p className="text-[10px] text-[#8E8680] mt-1">Mengunggah...</p>}
-        </div>
-        <div>
-          <label className="block text-[10px] font-bold uppercase text-[#8E8680] mb-1">URL Gambar</label>
-          <input
-            className={inputClass}
-            value={form.image_url}
-            onChange={(e) => setForm({ ...form, image_url: e.target.value })}
-            required
-          />
-        </div>
         <div>
           <label className="block text-[10px] font-bold uppercase text-[#8E8680] mb-1">Badge</label>
           <input className={inputClass} value={form.badge || ""} onChange={(e) => setForm({ ...form, badge: e.target.value })} />

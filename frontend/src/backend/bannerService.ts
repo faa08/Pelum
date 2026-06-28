@@ -106,13 +106,29 @@ export async function deleteBanner(id: string): Promise<void> {
 }
 
 export async function uploadBannerImage(file: File): Promise<string> {
+  if (file.size > 3 * 1024 * 1024) {
+    throw new Error("Ukuran gambar terlalu besar. Maksimal 3MB.");
+  }
+
   const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
   const filePath = `banners/${crypto.randomUUID()}.${ext}`;
-  const { error } = await supabase.storage.from("products").upload(filePath, file, {
-    cacheControl: "3600",
-    upsert: false,
-  });
-  if (error) throw new Error(error.message);
-  const { data } = supabase.storage.from("products").getPublicUrl(filePath);
-  return data.publicUrl;
+
+  try {
+    const { error } = await supabase.storage.from("products").upload(filePath, file, {
+      cacheControl: "3600",
+      upsert: false,
+    });
+    if (error) throw error;
+    const { data } = supabase.storage.from("products").getPublicUrl(filePath);
+    if (data?.publicUrl) return data.publicUrl;
+    throw new Error("Gagal mendapatkan URL gambar.");
+  } catch (err) {
+    console.warn("Upload banner ke storage gagal, pakai base64:", err);
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => resolve((event.target?.result as string) || "");
+      reader.onerror = () => reject(new Error("Gagal membaca file gambar."));
+      reader.readAsDataURL(file);
+    });
+  }
 }

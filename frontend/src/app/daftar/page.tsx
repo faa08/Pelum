@@ -9,6 +9,7 @@ import { Mail, Lock, Eye, EyeOff, User, Users, Grid } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { authService } from "@/backend/authService";
+import { formatUnknownError } from "@/lib/formatError";
 
 const C = {
   primary: "#1D4ED8",
@@ -31,6 +32,8 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [pendingVerifyEmail, setPendingVerifyEmail] = useState("");
+  const [resending, setResending] = useState(false);
 
   const generateUsername = (fullName: string): string => {
     const base = fullName
@@ -68,6 +71,7 @@ export default function RegisterPage() {
       const result = await authService.register(username, email, "", password);
 
       if (result.needsEmailVerification) {
+        setPendingVerifyEmail(result.email);
         setSuccessMsg(
           `Pendaftaran berhasil! Kami kirim link verifikasi ke ${result.email}. Buka inbox (dan folder spam) lalu klik link sebelum masuk.`
         );
@@ -84,7 +88,7 @@ export default function RegisterPage() {
         setErrorMsg("Pendaftaran gagal. Silakan coba lagi.");
       }
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : "Pendaftaran gagal. Silakan coba lagi.");
+      setErrorMsg(formatUnknownError(err, "Pendaftaran gagal. Silakan coba lagi."));
     } finally {
       setLoading(false);
     }
@@ -173,7 +177,37 @@ export default function RegisterPage() {
             {/* Success Message */}
             {successMsg && (
               <div style={{ background: "#F0FDF4", border: "1px solid #86EFAC", borderRadius: 8, padding: "10px 14px", marginBottom: 20, fontSize: "0.8125rem", color: "#16A34A", fontWeight: 600 }}>
-                {successMsg}
+                <p style={{ margin: 0 }}>{successMsg}</p>
+                {pendingVerifyEmail && (
+                  <button
+                    type="button"
+                    disabled={resending}
+                    onClick={async () => {
+                      setResending(true);
+                      setErrorMsg("");
+                      const result = await authService.resendVerificationEmail(pendingVerifyEmail);
+                      if (result.ok) {
+                        setSuccessMsg(`Link verifikasi dikirim ulang ke ${pendingVerifyEmail}. Cek inbox dan spam.`);
+                      } else {
+                        setErrorMsg(result.error || "Gagal mengirim ulang email verifikasi.");
+                      }
+                      setResending(false);
+                    }}
+                    style={{
+                      marginTop: 10,
+                      background: "none",
+                      border: "none",
+                      padding: 0,
+                      color: C.primary,
+                      fontWeight: 700,
+                      cursor: resending ? "not-allowed" : "pointer",
+                      fontSize: "0.8125rem",
+                      textDecoration: "underline",
+                    }}
+                  >
+                    {resending ? "Mengirim ulang..." : "Kirim ulang email verifikasi"}
+                  </button>
+                )}
               </div>
             )}
 

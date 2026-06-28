@@ -94,6 +94,20 @@ export default function SearchBar({ query: externalQuery = "", setQuery: externa
 
   const router = useRouter();
 
+  const [quickTags, setQuickTags] = useState<(typeof QUICK_SEARCH_TAGS)[number][]>([]);
+
+  useEffect(() => {
+    productService.getProducts({ publicOnly: true, limit: 200 }).then((products) => {
+      const counts = new Map<string, number>();
+      for (const p of products) {
+        const slug = p.categorySlug;
+        if (!slug) continue;
+        counts.set(slug, (counts.get(slug) || 0) + 1);
+      }
+      setQuickTags(QUICK_SEARCH_TAGS.filter((tag) => (counts.get(tag.slug) || 0) > 0));
+    });
+  }, []);
+
 
 
   useEffect(() => {
@@ -554,9 +568,10 @@ export default function SearchBar({ query: externalQuery = "", setQuery: externa
 
 
 
+      {quickTags.length > 0 && (
       <div className="search-tags-centered">
 
-        {QUICK_SEARCH_TAGS.map((tag) => (
+        {quickTags.map((tag) => (
 
           <Link key={tag.label} href={tag.href} className="search-tag-pill">
 
@@ -567,6 +582,7 @@ export default function SearchBar({ query: externalQuery = "", setQuery: externa
         ))}
 
       </div>
+      )}
 
     </div>
 

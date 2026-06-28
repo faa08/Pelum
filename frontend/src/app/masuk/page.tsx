@@ -88,7 +88,7 @@ function LoginForm() {
         } else if (loginError === "not_found") {
           setErrorMsg("Email belum terdaftar. Daftar akun baru atau jalankan seed admin di Supabase SQL Editor.");
         } else if (loginError === "email_not_confirmed") {
-          setErrorMsg("Email belum diverifikasi. Cek inbox Anda dan klik link konfirmasi dari Supabase.");
+          setErrorMsg("Email belum diverifikasi. Cek inbox/spam atau kirim ulang link verifikasi.");
         } else if (loginError === "wrong_password") {
           setErrorMsg("Kata sandi salah. Periksa kembali password Anda.");
         } else if (loginError === "no_password") {

@@ -79,7 +79,7 @@ export function getOrderPaymentDisplay(input: {
   return {
     kind: "digital",
     label: "Bayar QRIS",
-    desc: `Pembayaran digital (${methodHint}) — koordinasi pengiriman lewat chat admin`,
+    desc: `Pembayaran digital (${methodHint}) — alamat pengiriman tercatat di admin`,
   };
 }
 

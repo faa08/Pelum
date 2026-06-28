@@ -118,6 +118,13 @@ export default function CategoryPage({ params }: { params: Promise<{ slug?: stri
     return b.rating - a.rating;
   });
 
+  const getCategoryProductCount = (slug: string) =>
+    slug ? products.filter((p) => p.categorySlug === slug).length : products.length;
+
+  const visibleCategories = CATEGORIES_LIST.filter(
+    (cat) => !cat.slug || getCategoryProductCount(cat.slug) > 0
+  );
+
   return (
     <div style={{ background: "#FCFCFA", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <Navbar />
@@ -164,11 +171,9 @@ export default function CategoryPage({ params }: { params: Promise<{ slug?: stri
                 Jelajahi Kategori
               </h3>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {CATEGORIES_LIST.map((cat) => {
+                {visibleCategories.map((cat) => {
                   const isActive = (cat.slug === activeSlug);
-                  const productCount = cat.slug 
-                    ? products.filter(p => p.categorySlug === cat.slug).length
-                    : products.length;
+                  const productCount = getCategoryProductCount(cat.slug);
 
                   return (
                     <Link

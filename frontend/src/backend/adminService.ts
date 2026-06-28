@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 import { apiFetch } from "@/lib/api-client";
 import { getOrderPaymentDisplay, type OrderPaymentKind } from "@/lib/checkoutConstants";
+import { fetchAdminOrderRows, fetchAdminShipmentRows, formatDbError, mapAdminOrderRow, mapAdminShipmentRow } from "@/lib/adminOrderMapping";
 
 const isPlaceholder = () => {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -40,6 +41,11 @@ export interface AdminOrder {
   paymentKind: OrderPaymentKind;
   chatId?: string | null;
   needsShippingChat: boolean;
+  shippingAddress: string;
+  recipientName: string;
+  recipientPhone: string;
+  shipLat: number | null;
+  shipLng: number | null;
 }
 
 export type AdminShipStatus = "Perlu Dikirim" | "Sedang Dikirim" | "Selesai";
@@ -50,10 +56,13 @@ export interface AdminShipmentOrder {
   buyer: string;
   storeName: string;
   product: string;
+  productImg: string;
   qty: number;
   address: string;
   date: string;
   status: AdminShipStatus;
+  shipLat: number | null;
+  shipLng: number | null;
   courier?: string;
   resi?: string;
   eta?: string;
@@ -68,22 +77,6 @@ function mapSaldoStatus(stat: string): "Berhasil" | "Pending" | "Gagal" {
   return "Pending";
 }
 
-function mapOrderStatus(statOrder: string, statPay?: string): string {
-  if (statOrder === "pending" && statPay !== "success") return "Belum Bayar";
-  if (statOrder === "pending" && statPay === "success") return "Perlu Dikirim";
-  if (statOrder === "diproses") return "Perlu Dikirim";
-  if (statOrder === "dikirim") return "Dikirim";
-  if (statOrder === "selesai") return "Selesai";
-  if (statOrder === "dibatalkan") return "Dibatalkan";
-  return statOrder;
-}
-
-function mapShipStatus(statOrder: string, statKirim?: string): AdminShipStatus {
-  if (statOrder === "dikirim" || statKirim === "sedang_dikirim") return "Sedang Dikirim";
-  if (statOrder === "selesai" || statKirim === "sampai") return "Selesai";
-  return "Perlu Dikirim";
-}
-
 function initials(name: string) {
   return name
     .split(" ")
@@ -95,20 +88,6 @@ function initials(name: string) {
 
 function formatOrderId(id: string) {
   return `ORD-${id.replace(/-/g, "").substring(0, 8).toUpperCase()}`;
-}
-
-function parseProductImg(img?: string | null): string {
-  if (!img) return "/product-keramik.png";
-  if (img.startsWith("[")) {
-    try {
-      const arr = JSON.parse(img) as unknown[];
-      const first = arr.map((x) => String(x ?? "").trim()).find(Boolean);
-      return first || "/product-keramik.png";
-    } catch {
-      return "/product-keramik.png";
-    }
-  }
-  return img;
 }
 
 function formatDateId(iso: string, withTime = false) {
@@ -298,77 +277,23 @@ export const adminService = {
     if (isPlaceholder()) return [];
 
     try {
-      const { data, error } = await supabase
-        .from("order")
-        .select(`
-          id_order, stat_order, total_hrg, created_at, tipe_pembayaran, catatan,
-          users ( nama_lengkap ),
-          seller ( nm_store ),
-          order_item (
-            qty_orderitem, hrg_saat_beli,
-            produk ( nama_produk, img )
-          ),
-          payment ( stat_pay, metod_pay ),
-          pengiriman ( kurir ),
-          order_chat ( id_chat )
-        `)
-        .order("created_at", { ascending: false })
-        .limit(100);
-
-      if (error) throw error;
-      if (!data?.length) return [];
-
-      return data.map((o) => {
-        const user = Array.isArray(o.users) ? o.users[0] : o.users;
-        const seller = Array.isArray(o.seller) ? o.seller[0] : o.seller;
-        const items = o.order_item || [];
-        const firstItem = items[0];
-        const produk = firstItem
-          ? Array.isArray(firstItem.produk)
-            ? firstItem.produk[0]
-            : firstItem.produk
-          : null;
-        const pengiriman = Array.isArray(o.pengiriman) ? o.pengiriman[0] : o.pengiriman;
-        const payment = Array.isArray(o.payment) ? o.payment[0] : o.payment;
-        const orderChat = Array.isArray(o.order_chat) ? o.order_chat[0] : o.order_chat;
-        const paymentInfo = getOrderPaymentDisplay({
-          tipe_pembayaran: o.tipe_pembayaran,
-          metod_pay: payment?.metod_pay,
-          kurir: pengiriman?.kurir,
-          catatan: o.catatan,
-        });
-        const status = mapOrderStatus(o.stat_order, payment?.stat_pay);
-        const needsShippingChat =
-          paymentInfo.kind === "digital" &&
-          payment?.stat_pay === "success" &&
-          (status === "Perlu Dikirim" || status === "Dikirim");
-        const buyerName = user?.nama_lengkap || "Pembeli";
-        const totalQty = items.reduce((s: number, i) => s + (i.qty_orderitem || 1), 0);
-
-        return {
-          id: formatOrderId(o.id_order),
-          uuid: o.id_order,
-          date: formatDateId(o.created_at, true),
-          buyer: buyerName,
-          avatar: initials(buyerName),
-          storeName: seller?.nm_store || "Toko UMKM",
-          productName: produk?.nama_produk || "Produk",
-          productDetail:
-            items.length > 1
-              ? `${items.length} item (${totalQty} pcs)`
-              : `${firstItem?.qty_orderitem || 1} pcs`,
-          productImg: parseProductImg(produk?.img),
-          total: Number(o.total_hrg),
-          status,
-          paymentLabel: paymentInfo.label,
-          paymentDesc: paymentInfo.desc,
-          paymentKind: paymentInfo.kind,
-          chatId: orderChat?.id_chat || null,
-          needsShippingChat,
-        };
-      });
+      const res = await apiFetch("/api/admin/orders");
+      if (res.ok) {
+        const data = await res.json();
+        return (data.orders || []) as AdminOrder[];
+      }
+      const errBody = await res.json().catch(() => ({}));
+      console.warn("admin orders API:", res.status, (errBody as { error?: string }).error);
     } catch (err) {
-      console.error("adminService.getOrders failed:", err);
+      console.warn("admin orders API unreachable:", formatDbError(err));
+    }
+
+    try {
+      const rows = await fetchAdminOrderRows(supabase);
+      if (!rows.length) return [];
+      return rows.map((o) => mapAdminOrderRow(o));
+    } catch (err) {
+      console.error("adminService.getOrders failed:", formatDbError(err));
       return [];
     }
   },
@@ -439,79 +364,22 @@ export const adminService = {
     if (isPlaceholder()) return [];
 
     try {
-      const { data, error } = await supabase
-        .from("order")
-        .select(`
-          id_order, stat_order, created_at, tipe_pembayaran, catatan,
-          users ( nama_lengkap ),
-          seller ( nm_store ),
-          alamat ( detail_alamat, kota, provinsi, kode_pos ),
-          order_item (
-            qty_orderitem,
-            produk ( nama_produk )
-          ),
-          payment ( stat_pay, metod_pay ),
-          pengiriman ( kurir, no_resi, estimasi_tiba, stat_kirim )
-        `)
-        .not("stat_order", "eq", "dibatalkan")
-        .order("created_at", { ascending: false })
-        .limit(100);
+      const res = await apiFetch("/api/admin/orders?view=shipments");
+      if (res.ok) {
+        const data = await res.json();
+        return (data.shipments || []) as AdminShipmentOrder[];
+      }
+    } catch {
+      /* fallback below */
+    }
 
-      if (error) throw error;
-      if (!data?.length) return [];
-
-      return data
-        .filter((o) => {
-          const payment = Array.isArray(o.payment) ? o.payment[0] : o.payment;
-          if (o.stat_order === "pending" && payment?.stat_pay !== "success") return false;
-          return ["diproses", "dikirim", "selesai", "pending"].includes(o.stat_order);
-        })
-        .map((o) => {
-          const user = Array.isArray(o.users) ? o.users[0] : o.users;
-          const seller = Array.isArray(o.seller) ? o.seller[0] : o.seller;
-          const alamat = Array.isArray(o.alamat) ? o.alamat[0] : o.alamat;
-          const items = o.order_item || [];
-          const pengiriman = Array.isArray(o.pengiriman) ? o.pengiriman[0] : o.pengiriman;
-          const payment = Array.isArray(o.payment) ? o.payment[0] : o.payment;
-          const paymentInfo = getOrderPaymentDisplay({
-            tipe_pembayaran: o.tipe_pembayaran,
-            metod_pay: payment?.metod_pay,
-            kurir: pengiriman?.kurir,
-            catatan: o.catatan,
-          });
-          const firstItem = items[0];
-          const produk = firstItem
-            ? Array.isArray(firstItem.produk)
-              ? firstItem.produk[0]
-              : firstItem.produk
-            : null;
-          const totalQty = items.reduce((s: number, i) => s + (i.qty_orderitem || 1), 0);
-          const addressText = alamat
-            ? `${alamat.detail_alamat}, ${alamat.kota}, ${alamat.provinsi}${alamat.kode_pos ? ` ${alamat.kode_pos}` : ""}`
-            : "Alamat tidak tersedia";
-
-          return {
-            id: formatOrderId(o.id_order),
-            uuid: o.id_order,
-            buyer: user?.nama_lengkap || "Pembeli",
-            storeName: seller?.nm_store || "Toko UMKM",
-            product: produk?.nama_produk || "Produk",
-            qty: totalQty,
-            address: addressText,
-            date: formatDateId(o.created_at),
-            status: mapShipStatus(o.stat_order, pengiriman?.stat_kirim),
-            courier: pengiriman?.kurir,
-            resi: pengiriman?.no_resi,
-            eta: pengiriman?.estimasi_tiba
-              ? formatDateId(pengiriman.estimasi_tiba)
-              : undefined,
-            paymentLabel: paymentInfo.label,
-            paymentDesc: paymentInfo.desc,
-            paymentKind: paymentInfo.kind,
-          };
-        });
+    try {
+      const rows = await fetchAdminShipmentRows(supabase);
+      return rows
+        .map((o) => mapAdminShipmentRow(o))
+        .filter((row): row is AdminShipmentOrder => row != null);
     } catch (err) {
-      console.error("adminService.getShipments failed:", err);
+      console.error("adminService.getShipments failed:", formatDbError(err));
       return [];
     }
   },

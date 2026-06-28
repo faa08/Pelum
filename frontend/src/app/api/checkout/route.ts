@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, denyForeignUser } from "@/lib/api-auth";
+import { formatShippingAddressText } from "@/lib/formatShippingAddress";
+import { extractProductCoverUrl } from "@/lib/productUi";
 
 type CartRow = {
   id_cart_item: string;
@@ -14,6 +16,8 @@ type CartRow = {
     produk_stock: number;
     berat: number;
     varian?: unknown;
+    img?: string | null;
+    cover_img?: string | null;
     seller: { nm_store: string } | { nm_store: string }[];
   } | null;
 };
@@ -71,7 +75,7 @@ export async function POST(request: NextRequest) {
       .from("cart_item")
       .select(
         `id_cart_item, id_produk, qty_cartitem, pilihan_varian,
-        produk ( id_produk, id_seller, nama_produk, harga, produk_stock, berat, varian, seller ( nm_store ) )`
+        produk ( id_produk, id_seller, nama_produk, harga, produk_stock, berat, varian, img, cover_img, seller ( nm_store ) )`
       )
       .eq("id_cart", cart.id_cart)
       .in("id_cart_item", cartItemIds);
@@ -122,6 +126,26 @@ export async function POST(request: NextRequest) {
       total_hrg: number;
     }[] = [];
 
+    let digitalShippingNote: string | null = null;
+    let shipLat: number | null = null;
+    let shipLng: number | null = null;
+    if (paymentType === "digital" && addressId) {
+      const { data: addrRow } = await admin
+        .from("alamat")
+        .select(
+          "nama_penerima, no_telp, label, detail_alamat, kecamatan, kota, provinsi, kode_pos, lat, lng"
+        )
+        .eq("id_alamat", addressId)
+        .maybeSingle();
+      if (addrRow) {
+        digitalShippingNote = formatShippingAddressText(addrRow);
+        if (addrRow.lat != null && addrRow.lng != null) {
+          shipLat = Number(addrRow.lat);
+          shipLng = Number(addrRow.lng);
+        }
+      }
+    }
+
     const transactionRef = `TRX-${Date.now().toString(36).toUpperCase()}`;
     let groupIndex = 0;
     const groupCount = groups.size;
@@ -151,18 +175,29 @@ export async function POST(request: NextRequest) {
         stat_order: "pending",
         tipe_pembayaran: paymentType,
         transaction_ref: transactionRef,
-        catatan: paymentType === "offline" ? "Ambil di toko — bayar saat pickup" : null,
+        catatan:
+          paymentType === "offline"
+            ? "Ambil di toko — bayar saat pickup"
+            : digitalShippingNote,
+        ship_lat: paymentType === "digital" ? shipLat : null,
+        ship_lng: paymentType === "digital" ? shipLng : null,
       });
       if (orderErr) throw orderErr;
 
-      const orderItems = items.map((i) => ({
-        id_order_item: crypto.randomUUID(),
-        id_order,
-        id_produk: i.id_produk,
-        qty_orderitem: i.qty_cartitem,
-        hrg_saat_beli: Number(i.produk!.harga),
-        pilihan_varian: i.pilihan_varian ?? null,
-      }));
+      const orderItems = items.map((i) => {
+        const p = i.produk!;
+        const imgSnap = extractProductCoverUrl({ cover_img: p.cover_img, img: p.img });
+        return {
+          id_order_item: crypto.randomUUID(),
+          id_order,
+          id_produk: i.id_produk,
+          qty_orderitem: i.qty_cartitem,
+          hrg_saat_beli: Number(p.harga),
+          pilihan_varian: i.pilihan_varian ?? null,
+          nama_produk_snapshot: p.nama_produk,
+          img_snapshot: imgSnap,
+        };
+      });
 
       const { error: oiErr } = await admin.from("order_item").insert(orderItems);
       if (oiErr) throw oiErr;

@@ -107,6 +107,10 @@ function SearchContent() {
     return 0;
   });
 
+  const visibleFilterCategories = CATEGORIES.filter(
+    (cat) => cat === "Semua" || products.some((p) => p.category === cat)
+  );
+
   return (
     <>
       <Navbar /><SearchBar />
@@ -203,7 +207,7 @@ function SearchContent() {
               <div style={{ marginBottom: 24 }}>
                 <h4 style={{ fontSize: "0.8125rem", fontWeight: 800, color: C.textSec, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 12 }}>Kategori</h4>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {CATEGORIES.map((cat) => (
+                  {visibleFilterCategories.map((cat) => (
                     <label key={cat} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: "0.875rem", color: C.text, fontWeight: 500 }}>
                       <input type="checkbox" checked={cat === "Semua" ? selectedCats.length === 0 : selectedCats.includes(cat)} onChange={() => toggleCat(cat)} style={{ width: 15, height: 15, accentColor: C.primary, cursor: "pointer" }} />{cat}
                     </label>

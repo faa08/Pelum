@@ -111,6 +111,8 @@ CREATE TABLE alamat (
     kecamatan       VARCHAR(100) NOT NULL,
     kode_pos        VARCHAR(10),
     detail_alamat   TEXT NOT NULL,
+    lat             DOUBLE PRECISION,
+    lng             DOUBLE PRECISION,
     is_utama        BOOLEAN DEFAULT FALSE,
     created_at      TIMESTAMPTZ DEFAULT NOW()
 );
@@ -233,6 +235,8 @@ CREATE TABLE "order" (
     stat_order      stat_order_enum NOT NULL DEFAULT 'pending',
     tipe_pembayaran VARCHAR(20) DEFAULT 'digital',
     catatan         TEXT,
+    ship_lat        DOUBLE PRECISION,
+    ship_lng        DOUBLE PRECISION,
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
@@ -246,7 +250,9 @@ CREATE TABLE order_item (
     id_order        UUID NOT NULL REFERENCES "order"(id_order) ON DELETE CASCADE,
     id_produk       UUID REFERENCES produk(id_produk) ON DELETE SET NULL,
     qty_orderitem   INT NOT NULL CHECK (qty_orderitem > 0),
-    hrg_saat_beli   NUMERIC(15, 2) NOT NULL CHECK (hrg_saat_beli >= 0)
+    hrg_saat_beli   NUMERIC(15, 2) NOT NULL CHECK (hrg_saat_beli >= 0),
+    nama_produk_snapshot VARCHAR(255),
+    img_snapshot    TEXT
 );
 
 
@@ -961,7 +967,32 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS tanggal_lahir DATE;
 -- Checkout: referensi transaksi Midtrans + varian di order_item
 ALTER TABLE "order" ADD COLUMN IF NOT EXISTS transaction_ref VARCHAR(64);
 ALTER TABLE order_item ADD COLUMN IF NOT EXISTS pilihan_varian JSONB;
+ALTER TABLE order_item ADD COLUMN IF NOT EXISTS nama_produk_snapshot VARCHAR(255);
+ALTER TABLE order_item ADD COLUMN IF NOT EXISTS img_snapshot TEXT;
+
+-- Isi snapshot untuk pesanan lama (admin tidak perlu join produk)
+UPDATE order_item oi
+SET
+  nama_produk_snapshot = p.nama_produk,
+  img_snapshot = COALESCE(
+    NULLIF(TRIM(p.cover_img), ''),
+    CASE
+      WHEN p.img IS NOT NULL AND (p.img LIKE 'http%' OR p.img LIKE '/%') THEN LEFT(p.img, 2048)
+      WHEN p.img IS NOT NULL AND p.img LIKE 'data:image%' THEN p.img
+      ELSE NULL
+    END
+  )
+FROM produk p
+WHERE oi.id_produk = p.id_produk
+  AND (oi.nama_produk_snapshot IS NULL OR TRIM(oi.nama_produk_snapshot) = '');
+
 CREATE INDEX IF NOT EXISTS idx_order_transaction_ref ON "order"(transaction_ref);
+
+-- Koordinat alamat & snapshot lokasi kirim di pesanan
+ALTER TABLE alamat ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION;
+ALTER TABLE alamat ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION;
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS ship_lat DOUBLE PRECISION;
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS ship_lng DOUBLE PRECISION;
 
 -- Banner / hero (slider beranda & banner kategori — editable admin)
 CREATE TABLE IF NOT EXISTS site_banner (

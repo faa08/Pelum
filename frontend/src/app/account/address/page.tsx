@@ -16,6 +16,8 @@ type Alamat = {
   kecamatan: string;
   kode_pos: string | null;
   detail_alamat: string;
+  lat?: number | null;
+  lng?: number | null;
   is_utama: boolean;
 };
 
@@ -30,6 +32,8 @@ const EMPTY_FORM: FormState = {
   kecamatan: "",
   kode_pos: "",
   detail_alamat: "",
+  lat: null,
+  lng: null,
 };
 
 const isPlaceholder = () =>
@@ -74,6 +78,8 @@ export default function CustomerAddressPage() {
       kecamatan: addr.kecamatan,
       kode_pos: addr.kode_pos ?? "",
       detail_alamat: addr.detail_alamat,
+      lat: addr.lat ?? null,
+      lng: addr.lng ?? null,
     });
     setShowForm(true);
   };
@@ -146,6 +152,8 @@ export default function CustomerAddressPage() {
       kecamatan: picked.kecamatan,
       kode_pos: picked.kode_pos,
       detail_alamat: picked.detail_alamat,
+      lat: picked.lat,
+      lng: picked.lng,
     }));
   }, []);
 

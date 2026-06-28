@@ -11,6 +11,8 @@ export type Alamat = {
   kecamatan: string;
   kode_pos: string | null;
   detail_alamat: string;
+  lat?: number | null;
+  lng?: number | null;
   is_utama: boolean;
 };
 

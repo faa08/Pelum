@@ -5,7 +5,16 @@ import { Package, Truck, CheckCircle2, X, MapPin, AlertCircle, MessageCircle, St
 import Link from "next/link";
 import { adminService, type AdminShipmentOrder, type AdminShipStatus } from "@/backend/adminService";
 import { shippingService } from "@/backend/shippingService";
+import ShippingMapModal from "@/components/ShippingMapModal";
 import { getPaymentBadgeClass } from "@/lib/checkoutConstants";
+
+type MapViewState = {
+  title: string;
+  addressText: string;
+  lat: number | null;
+  lng: number | null;
+  isPickup: boolean;
+} | null;
 
 const COURIERS = ["JNE", "J&T Express", "SiCepat", "Gosend"];
 
@@ -15,6 +24,7 @@ export default function AdminPengirimanPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AdminShipStatus>("Perlu Dikirim");
   const [modalOrder, setModalOrder] = useState<AdminShipmentOrder | null>(null);
+  const [mapView, setMapView] = useState<MapViewState>(null);
   const [courier, setCourier] = useState("JNE");
   const [resi, setResi] = useState("");
   const [eta, setEta] = useState("");
@@ -94,6 +104,15 @@ export default function AdminPengirimanPage() {
 
   return (
     <div className="space-y-8">
+      <ShippingMapModal
+        open={!!mapView}
+        onClose={() => setMapView(null)}
+        title={mapView?.title || "Lokasi Pengiriman"}
+        addressText={mapView?.addressText || ""}
+        lat={mapView?.lat}
+        lng={mapView?.lng}
+        isPickup={mapView?.isPickup}
+      />
       <header className="flex items-end justify-between">
         <div>
           <h2 className="font-headline text-3xl font-bold text-[#1F1B18]">Manajemen Pengiriman</h2>
@@ -199,10 +218,25 @@ export default function AdminPengirimanPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-start gap-2">
-                    <MapPin size={13} className="text-[#8E8680] mt-0.5 flex-shrink-0" />
-                    <p className="text-xs text-[#5C5550] leading-relaxed">{order.address}</p>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setMapView({
+                        title: `Alamat — ${order.buyer}`,
+                        addressText: order.address,
+                        lat: order.shipLat,
+                        lng: order.shipLng,
+                        isPickup: order.paymentKind === "pickup",
+                      })
+                    }
+                    className="flex items-start gap-2 text-left w-full group"
+                  >
+                    <MapPin size={13} className="text-[#1D4ED8] mt-0.5 flex-shrink-0 group-hover:scale-110 transition" />
+                    <p className="text-xs text-[#5C5550] leading-relaxed group-hover:text-[#1D4ED8]">
+                      {order.address}
+                      <span className="block text-[10px] font-bold text-[#1D4ED8] mt-1">Klik untuk lihat di peta →</span>
+                    </p>
+                  </button>
                   {order.status !== "Perlu Dikirim" && order.courier && (
                     <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-[#F5F3F0]">
                       <span className="px-2.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px] font-bold">
