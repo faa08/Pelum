@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { apiFetch } from "@/lib/api-client";
 import { getOrderPaymentDisplay, type OrderPaymentKind } from "@/lib/checkoutConstants";
 
 const isPlaceholder = () => {
@@ -417,6 +418,23 @@ export const adminService = {
     }
   },
 
+  async confirmPickupOrder(orderId: string): Promise<{ ok: boolean; error?: string }> {
+    if (isPlaceholder()) return { ok: false, error: "Supabase belum dikonfigurasi." };
+    try {
+      const res = await apiFetch("/api/admin/orders/confirm-pickup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      });
+      const data = await res.json();
+      if (!res.ok) return { ok: false, error: data.error || "Gagal mengonfirmasi pickup." };
+      return { ok: true };
+    } catch (err) {
+      console.error("adminService.confirmPickupOrder failed:", err);
+      return { ok: false, error: "Gagal mengonfirmasi pickup." };
+    }
+  },
+
   async getShipments(): Promise<AdminShipmentOrder[]> {
     if (isPlaceholder()) return [];
 
@@ -637,7 +655,7 @@ export const adminService = {
         .from("order")
         .select(`
           total_hrg, stat_order,
-          seller ( id_seller, nm_store, addr, is_verified )
+          seller ( id_seller, nm_store, addr, is_verified, logo_toko )
         `)
         .neq("stat_order", "dibatalkan");
 
@@ -645,18 +663,31 @@ export const adminService = {
 
       const storeMap = new Map<
         string,
-        { nama: string; lokasi: string; kategori: string; pesanan: number; omzet: number }
+        {
+          nama: string;
+          lokasi: string;
+          kategori: string;
+          pesanan: number;
+          omzet: number;
+          logo: string;
+          isVerified: boolean;
+        }
       >();
+
+      const defaultLogo =
+        "https://images.unsplash.com/photo-1544816155-12df9643f363?q=80&w=100&auto=format&fit=crop";
 
       for (const o of orders || []) {
         const seller = Array.isArray(o.seller) ? o.seller[0] : o.seller;
         if (!seller?.id_seller) continue;
         const cur = storeMap.get(seller.id_seller) || {
           nama: seller.nm_store || "Toko",
-          lokasi: seller.addr?.split(",")[0] || "-",
+          lokasi: seller.addr?.split(",")[0] || "Indonesia",
           kategori: "UMKM",
           pesanan: 0,
           omzet: 0,
+          logo: seller.logo_toko?.trim() || defaultLogo,
+          isVerified: Boolean(seller.is_verified),
         };
         cur.pesanan += 1;
         cur.omzet += Number(o.total_hrg);
@@ -684,12 +715,14 @@ export const adminService = {
 
       return Array.from(storeMap.entries())
         .map(([id, s]) => ({
-          ...s,
+          nama: s.nama,
+          lokasi: s.lokasi,
+          kategori: s.kategori,
           pesanan: s.pesanan,
           omzet: s.omzet,
           rating: ratings.get(id) || 4.5,
-          status: "Aktif",
-          logo: "/product-keramik.png",
+          status: s.isVerified ? "Aktif" : "Nonaktif",
+          logo: s.logo,
         }))
         .sort((a, b) => b.omzet - a.omzet)
         .slice(0, limit);

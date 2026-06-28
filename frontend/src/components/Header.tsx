@@ -18,11 +18,13 @@ import {
   Headphones,
   Package,
 } from "lucide-react";
-import { authService } from "@/backend/authService";
+import { authService, USER_UPDATED_EVENT } from "@/backend/authService";
+import { resolveAvatarUrl } from "@/lib/avatar";
 import { cartService } from "@/backend/cartService";
 import { useRouter } from "next/navigation";
 import { useCustomerService } from "@/components/CustomerServiceProvider";
 import { useNotifications } from "@/hooks/useNotifications";
+import { useLogoutConfirm } from "@/hooks/useLogoutConfirm";
 import type { NotificationItem } from "@/backend/notificationService";
 
 interface HeaderProps {
@@ -52,28 +54,35 @@ export default function Header({
     handleMarkAllRead,
     handleClearAll,
     handleToggleRead,
+    handleOpen,
+    refresh,
   } = useNotifications();
   const [isMobile, setIsMobile] = useState(false);
   const [currentUser, setCurrentUser] = useState<ReturnType<typeof authService.getCurrentUser>>(null);
   const [liveCartCount, setLiveCartCount] = useState(cartCount);
 
   const displayCartCount = liveCartCount;
+  const avatarSrc = resolveAvatarUrl(currentUser?.avatar);
 
   const profileContainerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const handleLogout = () => {
-    authService.logout();
-    setCurrentUser(null);
-    setIsProfileOpen(false);
-    router.push("/");
-  };
+  const { requestLogout, LogoutConfirmDialog } = useLogoutConfirm({
+    onBeforeLogout: () => {
+      setIsProfileOpen(false);
+      setCurrentUser(null);
+    },
+  });
 
   useEffect(() => {
-    setCurrentUser(authService.getCurrentUser());
-    const handleStorage = () => setCurrentUser(authService.getCurrentUser());
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
+    const syncUser = () => setCurrentUser(authService.getCurrentUser());
+    syncUser();
+    window.addEventListener("storage", syncUser);
+    window.addEventListener(USER_UPDATED_EVENT, syncUser);
+    return () => {
+      window.removeEventListener("storage", syncUser);
+      window.removeEventListener(USER_UPDATED_EVENT, syncUser);
+    };
   }, []);
 
   useEffect(() => {
@@ -151,7 +160,7 @@ export default function Header({
         ) : (
           <>
             {/* Action Area */}
-            <div className="flex items-center gap-6">
+            <div className="flex items-center gap-4 md:gap-6 flex-wrap justify-end">
               {/* Search Bar inside Header */}
               {setSearchQuery && (
                 <div className="relative flex items-center w-[180px] sm:w-[240px] md:w-[320px]">
@@ -168,7 +177,7 @@ export default function Header({
               {/* Cart Icon */}
               <Link href="/keranjang" className="nav-cart-btn" id="cart-btn">
                 <ShoppingCart size={18} className="nav-icon-orange" />
-                <span>Keranjang{displayCartCount > 0 ? ` (${displayCartCount})` : ""}</span>
+                <span className="nav-text-hide-sm">Keranjang{displayCartCount > 0 ? ` (${displayCartCount})` : ""}</span>
               </Link>
 
               {/* Chat Icon */}
@@ -180,7 +189,7 @@ export default function Header({
                 title="Customer Service"
               >
                 <Headphones size={18} className="nav-icon-orange" />
-                <span>Bantuan</span>
+                <span className="nav-text-hide-sm">Bantuan</span>
               </button>
 
               {/* Notification Button and Dropdown Card */}
@@ -189,7 +198,10 @@ export default function Header({
                   className="nav-bell-btn" 
                   id="notif-btn" 
                   title="Notifikasi"
-                  onClick={() => setIsOpen(!isOpen)}
+                  onClick={() => {
+                    if (!isOpen) refresh();
+                    setIsOpen(!isOpen);
+                  }}
                   aria-expanded={isOpen}
                 >
                   <Bell size={18} className="nav-icon-orange" />
@@ -230,7 +242,12 @@ export default function Header({
                           <div
                             key={notif.id}
                             className={`notif-item ${notif.unread ? "unread" : ""}`}
-                            onClick={() => handleToggleRead(notif.id)}
+                            onClick={async () => {
+                              const link = await handleOpen(notif);
+                              setIsOpen(false);
+                              if (link) router.push(link);
+                            }}
+                            style={{ cursor: notif.link ? "pointer" : "default" }}
                           >
                             <div className={`notif-icon-box ${notif.type}`}>
                               {renderNotifIcon(notif.type)}
@@ -268,27 +285,15 @@ export default function Header({
                     className="flex items-center gap-2 hover:opacity-90 transition"
                     aria-expanded={isProfileOpen}
                   >
-                    <div className="w-8 h-8 shrink-0 rounded-full bg-zinc-200 overflow-hidden border border-surface-container-high flex items-center justify-center">
-                      {currentUser && currentUser.avatar ? (
-                        <img 
-                          src={currentUser.avatar} 
-                          alt="User Profile" 
-                          className="w-full h-full object-cover" 
-                        />
-                      ) : currentUser ? (
-                        <div className="w-full h-full bg-primary flex items-center justify-center text-white text-[10px] font-bold uppercase">
-                          {(currentUser.nama_lengkap || currentUser.username || "U").substring(0, 2)}
-                        </div>
-                      ) : (
-                        <img 
-                          src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=100&auto=format&fit=crop" 
-                          alt="User Profile" 
-                          className="w-full h-full object-cover" 
-                        />
-                      )}
+                    <div className="w-8 h-8 shrink-0 rounded-full bg-[#E8E8E8] overflow-hidden border border-surface-container-high flex items-center justify-center">
+                      <img 
+                        src={avatarSrc} 
+                        alt="User Profile" 
+                        className="w-full h-full object-cover" 
+                      />
                     </div>
                     <span className="text-xs font-bold text-on-surface hidden md:inline">
-                      {currentUser ? (currentUser.nama_lengkap || currentUser.username) : "Siti Rahayu"}
+                      {currentUser ? (currentUser.nama_lengkap || currentUser.username) : "Akun"}
                     </span>
                   </button>
                   {isProfileOpen && !isMobile && (
@@ -296,31 +301,19 @@ export default function Header({
                       {/* Profile Info Header */}
                       <div className="flex items-center justify-between pb-3 mb-2 border-b border-gray-100 px-1">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 shrink-0 rounded-full overflow-hidden border border-surface-container-high bg-zinc-200 flex items-center justify-center">
-                            {currentUser && currentUser.avatar ? (
-                              <img 
-                                src={currentUser.avatar} 
-                                alt="User Profile" 
-                                className="w-full h-full object-cover" 
-                              />
-                            ) : currentUser ? (
-                              <div className="w-full h-full bg-primary flex items-center justify-center text-white text-xs font-bold uppercase">
-                                {(currentUser.nama_lengkap || currentUser.username || "U").substring(0, 2)}
-                              </div>
-                            ) : (
-                              <img 
-                                src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=100&auto=format&fit=crop" 
-                                alt="User Profile" 
-                                className="w-full h-full object-cover" 
-                              />
-                            )}
+                          <div className="w-10 h-10 shrink-0 rounded-full overflow-hidden border border-surface-container-high bg-[#E8E8E8] flex items-center justify-center">
+                            <img 
+                              src={avatarSrc} 
+                              alt="User Profile" 
+                              className="w-full h-full object-cover" 
+                            />
                           </div>
                           <div className="flex flex-col text-left">
                             <span className="text-sm font-bold leading-tight">
-                              {currentUser ? (currentUser.nama_lengkap || currentUser.username) : "Siti Rahayu"}
+                              {currentUser ? (currentUser.nama_lengkap || currentUser.username) : "Akun"}
                             </span>
                             <span className="text-[11px] text-gray-400">
-                              {currentUser ? `@${currentUser.username || "user"}` : "@sitirahayu"}
+                              {currentUser ? `@${currentUser.username || "user"}` : "Belum masuk"}
                             </span>
                           </div>
                         </div>
@@ -364,7 +357,7 @@ export default function Header({
 
 
                         <button
-                          onClick={handleLogout}
+                          onClick={requestLogout}
                           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors text-left w-full mt-1 border-t border-gray-100 pt-3"
                         >
                           <LogOut className="w-4 h-4 text-red-500" />
@@ -395,8 +388,8 @@ export default function Header({
                               <User className="w-5 h-5 fill-white text-white" />
                             </div>
                             <div className="flex flex-col text-left">
-                              <span className="text-sm font-bold leading-tight">57w3eiqd</span>
-                              <span className="text-[11px] text-gray-400">@57w3eiqd</span>
+                              <span className="text-sm font-bold leading-tight">Tamu</span>
+                              <span className="text-[11px] text-gray-400">Belum masuk</span>
                             </div>
                           </div>
                           <Link 
@@ -439,10 +432,7 @@ export default function Header({
 
 
                           <button
-                            onClick={() => {
-                              setIsProfileOpen(false);
-                              alert("Anda telah logout.");
-                            }}
+                            onClick={requestLogout}
                             className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors text-left w-full mt-1 border-t border-gray-100 pt-3"
                           >
                             <LogOut className="w-4 h-4 text-red-500" />
@@ -463,10 +453,10 @@ export default function Header({
       {isProfileOpen && isMobile && (
         <div className="md:hidden">
           <div 
-            className="fixed inset-0 bg-[#1F1B18]/40 backdrop-blur-xs z-[1000] animate-fade-in"
+            className="fixed inset-0 bg-[#1F1B18]/40 backdrop-blur-xs z-[10050] animate-fade-in"
             onClick={() => setIsProfileOpen(false)}
           />
-          <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[24px] border-t border-[#EAE5E0] shadow-2xl z-[1010] px-6 pb-8 pt-3 text-[#1F1B18] animate-slide-up normal-case tracking-normal flex flex-col">
+          <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[24px] border-t border-[#EAE5E0] shadow-2xl z-[10051] px-6 pb-8 pt-3 text-[#1F1B18] animate-slide-up normal-case tracking-normal flex flex-col">
             {/* Handlebar */}
             <div 
               className="w-12 h-1.5 bg-[#EAE5E0] rounded-full mx-auto mb-5 cursor-pointer"
@@ -478,31 +468,19 @@ export default function Header({
               <div className="flex items-center gap-3">
                 {showProfile ? (
                   <>
-                    <div className="w-11 h-11 shrink-0 rounded-full overflow-hidden border border-surface-container-high bg-zinc-200 flex items-center justify-center">
-                      {currentUser && currentUser.avatar ? (
-                        <img 
-                          src={currentUser.avatar} 
-                          alt="User Profile" 
-                          className="w-full h-full object-cover" 
-                        />
-                      ) : currentUser ? (
-                        <div className="w-full h-full bg-primary flex items-center justify-center text-white text-sm font-bold uppercase">
-                          {(currentUser.nama_lengkap || currentUser.username || "U").substring(0, 2)}
-                        </div>
-                      ) : (
-                        <img 
-                          src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=100&auto=format&fit=crop" 
-                          alt="User Profile" 
-                          className="w-full h-full object-cover" 
-                        />
-                      )}
+                    <div className="w-11 h-11 shrink-0 rounded-full overflow-hidden border border-surface-container-high bg-[#E8E8E8] flex items-center justify-center">
+                      <img 
+                        src={avatarSrc} 
+                        alt="User Profile" 
+                        className="w-full h-full object-cover" 
+                      />
                     </div>
                     <div className="flex flex-col text-left">
                       <span className="text-base font-bold leading-tight text-[#1F1B18]">
-                        {currentUser ? (currentUser.nama_lengkap || currentUser.username) : "Siti Rahayu"}
+                        {currentUser ? (currentUser.nama_lengkap || currentUser.username) : "Akun"}
                       </span>
                       <span className="text-xs text-[#8E8680]">
-                        {currentUser ? `@${currentUser.username || "user"}` : "@sitirahayu"}
+                        {currentUser ? `@${currentUser.username || "user"}` : "Belum masuk"}
                       </span>
                     </div>
                   </>
@@ -512,8 +490,8 @@ export default function Header({
                       <User size={20} className="fill-white text-white" />
                     </div>
                     <div className="flex flex-col text-left">
-                      <span className="text-base font-bold leading-tight text-[#1F1B18]">57w3eiqd</span>
-                      <span className="text-xs text-[#8E8680]">@57w3eiqd</span>
+                      <span className="text-base font-bold leading-tight text-[#1F1B18]">Tamu</span>
+                      <span className="text-xs text-[#8E8680]">Belum masuk</span>
                     </div>
                   </>
                 )}
@@ -558,7 +536,8 @@ export default function Header({
 
 
               <button
-                onClick={handleLogout}
+                type="button"
+                onClick={requestLogout}
                 className="flex items-center gap-4 px-4 py-3.5 rounded-xl text-sm font-bold text-red-600 hover:bg-red-50 transition-colors text-left w-full mt-2 border border-red-100 bg-red-50/20"
               >
                 <LogOut className="w-5 h-5 text-red-500" />
@@ -568,6 +547,7 @@ export default function Header({
           </div>
         </div>
       )}
+      <LogoutConfirmDialog />
     </header>
   );
 }

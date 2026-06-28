@@ -4,7 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Mail, Lock, Eye, EyeOff, User, Users, Grid, Phone, Calendar } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, User, Users, Grid } from "lucide-react";
 
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -25,9 +25,7 @@ export default function RegisterPage() {
   const router = useRouter();
   const [showPass, setShowPass] = useState(false);
   const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
-  const [dob, setDob] = useState("");
   const [password, setPassword] = useState("");
   const [agreed, setAgreed] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -58,10 +56,6 @@ export default function RegisterPage() {
       setErrorMsg("Alamat email wajib diisi.");
       return;
     }
-    if (!dob) {
-      setErrorMsg("Tanggal lahir wajib diisi.");
-      return;
-    }
     if (password.length < 6) {
       setErrorMsg("Kata sandi minimal 6 karakter.");
       return;
@@ -71,10 +65,17 @@ export default function RegisterPage() {
 
     try {
       const username = generateUsername(name);
-      const newUser = await authService.register(username, email, phone, password, dob);
-      if (newUser) {
-        // Auto-login after successful registration
-        authService.setCurrentUser(newUser);
+      const result = await authService.register(username, email, "", password);
+
+      if (result.needsEmailVerification) {
+        setSuccessMsg(
+          `Pendaftaran berhasil! Kami kirim link verifikasi ke ${result.email}. Buka inbox (dan folder spam) lalu klik link sebelum masuk.`
+        );
+        return;
+      }
+
+      if (result.user) {
+        authService.setCurrentUser(result.user);
         setSuccessMsg("Pendaftaran berhasil! Mengalihkan ke profil Anda...");
         setTimeout(() => {
           router.push("/account/profile");
@@ -82,8 +83,8 @@ export default function RegisterPage() {
       } else {
         setErrorMsg("Pendaftaran gagal. Silakan coba lagi.");
       }
-    } catch (err: any) {
-      setErrorMsg(err.message || "Pendaftaran gagal. Silakan coba lagi.");
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : "Pendaftaran gagal. Silakan coba lagi.");
     } finally {
       setLoading(false);
     }
@@ -97,20 +98,9 @@ export default function RegisterPage() {
 
       {/* ── Main Card ── */}
       <main style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "40px 24px" }}>
-        <div style={{
-          display: "flex",
-          width: "100%",
-          maxWidth: 900,
-          minHeight: 620,
-          borderRadius: 16,
-          overflow: "hidden",
-          boxShadow: "0 8px 40px rgba(0,0,0,0.10)",
-        }}>
-
+        <div className="auth-split-card">
           {/* ── Left Panel ── */}
-          <div style={{
-            width: 420,
-            flexShrink: 0,
+          <div className="auth-split-left" style={{
             background: C.primaryPale,
             padding: "40px 36px",
             display: "flex",
@@ -162,8 +152,7 @@ export default function RegisterPage() {
           </div>
 
           {/* ── Right Panel ── */}
-          <div style={{
-            flex: 1,
+          <div className="auth-split-right" style={{
             background: "white",
             borderLeft: `1px solid ${C.border}`,
             padding: "48px 40px",
@@ -228,46 +217,6 @@ export default function RegisterPage() {
                     required
                     disabled={loading}
                     style={{ flex: 1, border: "none", outline: "none", height: "100%", fontSize: "0.875rem", color: C.text, fontFamily: "inherit", background: "transparent" }}
-                  />
-                </div>
-              </div>
-
-              {/* Phone Number */}
-              <div>
-                <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 700, color: C.text, marginBottom: 8 }}>
-                  No. Telepon <span style={{ fontWeight: 400, color: C.textMuted }}>(opsional)</span>
-                </label>
-                <div style={{ display: "flex", alignItems: "center", border: `1.5px solid ${C.borderStrong}`, borderRadius: 8, overflow: "hidden", background: "white", height: 48 }}>
-                  <span style={{ padding: "0 14px", color: C.textMuted, display: "flex", alignItems: "center" }}>
-                    <Phone size={16} />
-                  </span>
-                  <input
-                    type="tel"
-                    placeholder="08xxxxxxxxxx"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    disabled={loading}
-                    style={{ flex: 1, border: "none", outline: "none", height: "100%", fontSize: "0.875rem", color: C.text, fontFamily: "inherit", background: "transparent" }}
-                  />
-                </div>
-              </div>
-
-              {/* Date of Birth */}
-              <div>
-                <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 700, color: C.text, marginBottom: 8 }}>
-                  Tanggal Lahir
-                </label>
-                <div style={{ display: "flex", alignItems: "center", border: `1.5px solid ${C.borderStrong}`, borderRadius: 8, overflow: "hidden", background: "white", height: 48 }}>
-                  <span style={{ padding: "0 14px", color: C.textMuted, display: "flex", alignItems: "center" }}>
-                    <Calendar size={16} />
-                  </span>
-                  <input
-                    type="date"
-                    value={dob}
-                    onChange={(e) => setDob(e.target.value)}
-                    required
-                    disabled={loading}
-                    style={{ flex: 1, border: "none", outline: "none", height: "100%", fontSize: "0.875rem", color: C.text, fontFamily: "inherit", background: "transparent", paddingRight: 14 }}
                   />
                 </div>
               </div>

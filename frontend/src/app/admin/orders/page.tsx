@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { AlertCircle, MessageCircle } from "lucide-react";
+import { AlertCircle, MessageCircle, Store } from "lucide-react";
 import { adminService, type AdminOrder } from "@/backend/adminService";
 import { shippingService } from "@/backend/shippingService";
 import { getPaymentBadgeClass } from "@/lib/checkoutConstants";
@@ -13,6 +13,7 @@ export default function AdminOrdersPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("Semua");
+  const [confirmingPickup, setConfirmingPickup] = useState<string | null>(null);
 
   const tabs = ["Semua", "Belum Bayar", "Perlu Dikirim", "Dikirim", "Selesai", "Dibatalkan"];
 
@@ -51,7 +52,27 @@ export default function AdminOrdersPage() {
     if (updated) fetchOrders();
   };
 
+  const handleConfirmPickup = async (uuid: string, buyer: string) => {
+    const ok = window.confirm(
+      `Konfirmasi pesanan pickup dari ${buyer} sudah diambil & dibayar di toko?`
+    );
+    if (!ok) return;
+
+    setConfirmingPickup(uuid);
+    const result = await adminService.confirmPickupOrder(uuid);
+    setConfirmingPickup(null);
+
+    if (result.ok) {
+      fetchOrders();
+    } else {
+      alert(result.error || "Gagal mengonfirmasi pickup.");
+    }
+  };
+
   const needShippingCount = orders.filter((o) => o.status === "Perlu Dikirim").length;
+  const needPickupCount = orders.filter(
+    (o) => o.status === "Perlu Dikirim" && o.paymentKind === "pickup"
+  ).length;
   const needChatCount = orders.filter((o) => o.needsShippingChat).length;
 
   const filteredOrders = orders.filter((o) => {
@@ -98,6 +119,18 @@ export default function AdminOrdersPage() {
         <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
           <AlertCircle size={18} />
           {error}
+        </div>
+      )}
+
+      {needPickupCount > 0 && (
+        <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-900">
+          <Store size={18} className="flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-bold">{needPickupCount} pesanan pickup menunggu konfirmasi</p>
+            <p className="text-xs mt-0.5 text-amber-800">
+              Setelah pelanggan bayar & ambil barang di toko, klik &quot;Konfirmasi Diambil&quot;.
+            </p>
+          </div>
         </div>
       )}
 
@@ -239,11 +272,17 @@ export default function AdminOrdersPage() {
                           </button>
                         )}
                         {order.status === "Perlu Dikirim" && order.paymentKind === "pickup" && (
-                          <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded">
-                            Pickup di toko
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleConfirmPickup(order.uuid, order.buyer)}
+                            disabled={confirmingPickup === order.uuid}
+                            className="flex items-center gap-1 bg-amber-600 text-white text-[10px] font-bold px-3 py-1.5 rounded hover:bg-amber-700 transition disabled:opacity-60"
+                          >
+                            <Store size={12} />
+                            {confirmingPickup === order.uuid ? "Memproses..." : "Konfirmasi Diambil"}
+                          </button>
                         )}
-                        {(order.status === "Dikirim" || order.status === "Perlu Dikirim") && (
+                        {order.status === "Dikirim" && order.paymentKind !== "pickup" && (
                           <button
                             onClick={() => handleCompleteOrder(order.uuid)}
                             className="bg-green-600 text-white text-[10px] font-bold px-3 py-1.5 rounded hover:bg-green-700 transition"

@@ -2,23 +2,56 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ChevronRight, Mail, Phone, MapPin, Clock, Send, CheckCircle, MessageSquare, HeadphonesIcon } from "lucide-react";
+import { ChevronRight, Mail, MapPin, Send, CheckCircle, MessageSquare, HeadphonesIcon, Link2 } from "lucide-react";
 import { supportService } from "@/backend/supportService";
 import { authService } from "@/backend/authService";
+import { useCustomerService } from "@/components/CustomerServiceProvider";
+import { CONTACT_EMAIL, CONTACT_EMAIL_MAILTO, LINKPRODUCTIVE_LINKTREE_URL, LINKPRODUCTIVE_WEBSITE_URL } from "@/lib/siteContact";
+import { PICKUP_STORE_ADDRESS } from "@/lib/checkoutConstants";
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 
-const CONTACT_CARDS = [
-  { icon: <Mail size={20} />, title: "Email", value: "support@pelataranumkm.id", sub: "Balas dalam 1×24 jam kerja", href: "mailto:support@pelataranumkm.id" },
-  { icon: <Phone size={20} />, title: "Telepon", value: "+62 21 5500 1234", sub: "Senin–Jumat, 09.00–17.00 WIB", href: "tel:+622155001234" },
-  { icon: <MessageSquare size={20} />, title: "Live Chat", value: "Chat Langsung", sub: "Tersedia di halaman bantuan", href: "/bantuan" },
-  { icon: <HeadphonesIcon size={20} />, title: "Pusat Bantuan", value: "Lihat FAQ", sub: "Temukan jawaban cepat", href: "/bantuan" },
-];
-
 export default function KontakPage() {
+  const { open: openCustomerService } = useCustomerService();
   const [form, setForm] = useState({ name: "", email: "", subject: "", message: "" });
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const contactCards = [
+    {
+      key: "email",
+      icon: <Mail size={20} />,
+      title: "Email",
+      value: CONTACT_EMAIL,
+      sub: "Balas dalam 1×24 jam kerja",
+      href: CONTACT_EMAIL_MAILTO,
+    },
+    {
+      key: "chat-admin",
+      icon: <HeadphonesIcon size={20} />,
+      title: "Chat Admin",
+      value: "Chat Langsung",
+      sub: "Butuh bantuan cepat dari tim kami",
+      onClick: openCustomerService,
+    },
+    {
+      key: "linktree",
+      icon: <Link2 size={20} />,
+      title: "Link Productive",
+      value: "linktr.ee/linkproductive",
+      sub: "Sosial media & layanan resmi",
+      href: LINKPRODUCTIVE_LINKTREE_URL,
+      external: true,
+    },
+    {
+      key: "bantuan",
+      icon: <MessageSquare size={20} />,
+      title: "Pusat Bantuan",
+      value: "Lihat FAQ",
+      sub: "Temukan jawaban cepat",
+      href: "/bantuan",
+    },
+  ];
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -41,14 +74,12 @@ export default function KontakPage() {
       <Navbar />
 
       <main className="flex-1 max-w-[1100px] mx-auto w-full px-6 py-10">
-        {/* Breadcrumb */}
         <nav className="flex items-center gap-2 text-xs text-secondary mb-8">
           <Link href="/" className="hover:text-primary transition">Beranda</Link>
           <ChevronRight size={12} />
           <span className="text-on-surface font-semibold">Hubungi Kami</span>
         </nav>
 
-        {/* Header */}
         <div className="text-center mb-12">
           <h1 className="text-3xl font-extrabold text-on-surface mb-3">Hubungi Kami</h1>
           <p className="text-secondary text-sm leading-relaxed max-w-lg mx-auto">
@@ -56,30 +87,54 @@ export default function KontakPage() {
           </p>
         </div>
 
-        {/* Contact Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-12">
-          {CONTACT_CARDS.map((c) => (
-            <a key={c.title} href={c.href} className="bg-white border border-surface-container rounded-xl p-5 shadow-sm text-center hover:border-primary hover:shadow-md transition group">
-              <div className="w-10 h-10 rounded-lg bg-primary-container flex items-center justify-center text-primary mx-auto mb-3 group-hover:bg-primary group-hover:text-white transition">
-                {c.icon}
-              </div>
-              <p className="font-extrabold text-xs text-on-surface mb-1">{c.title}</p>
-              <p className="text-sm font-bold text-primary mb-0.5">{c.value}</p>
-              <p className="text-[10px] text-secondary">{c.sub}</p>
-            </a>
-          ))}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-12">
+          {contactCards.map((c) => {
+            const inner = (
+              <>
+                <div className="w-10 h-10 rounded-lg bg-primary-container flex items-center justify-center text-primary mx-auto mb-3 group-hover:bg-primary group-hover:text-white transition">
+                  {c.icon}
+                </div>
+                <p className="font-extrabold text-xs text-on-surface mb-1">{c.title}</p>
+                <p className="text-sm font-bold text-primary mb-0.5">{c.value}</p>
+                <p className="text-[10px] text-secondary">{c.sub}</p>
+              </>
+            );
+
+            if (c.onClick) {
+              return (
+                <button
+                  key={c.key}
+                  type="button"
+                  onClick={c.onClick}
+                  className="bg-white border border-surface-container rounded-xl p-5 shadow-sm text-center hover:border-primary hover:shadow-md transition group w-full"
+                >
+                  {inner}
+                </button>
+              );
+            }
+
+            return (
+              <a
+                key={c.key}
+                href={c.href}
+                {...("external" in c && c.external
+                  ? { target: "_blank", rel: "noopener noreferrer" }
+                  : {})}
+                className="bg-white border border-surface-container rounded-xl p-5 shadow-sm text-center hover:border-primary hover:shadow-md transition group"
+              >
+                {inner}
+              </a>
+            );
+          })}
         </div>
 
-        {/* Form + Info */}
         <div className="grid md:grid-cols-5 gap-8">
-
-          {/* Form */}
           <div className="md:col-span-3 bg-white border border-surface-container rounded-xl p-8 shadow-sm">
             <h2 className="text-lg font-extrabold text-on-surface mb-6">Kirim Pesan</h2>
 
             {!sent ? (
               <form onSubmit={handleSubmit} className="space-y-5">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-on-surface uppercase tracking-wider mb-2">Nama Lengkap</label>
                     <input type="text" required placeholder="John Doe" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full h-11 border border-[#D5CFC9] rounded-lg px-4 text-sm font-medium text-on-surface outline-none focus:border-primary transition" />
@@ -127,7 +182,6 @@ export default function KontakPage() {
             )}
           </div>
 
-          {/* Info */}
           <div className="md:col-span-2 space-y-5">
             <div className="bg-white border border-surface-container rounded-xl p-6 shadow-sm space-y-5">
               <h3 className="font-extrabold text-on-surface">Informasi Kantor</h3>
@@ -136,24 +190,54 @@ export default function KontakPage() {
                   <MapPin size={16} className="text-primary mt-0.5 flex-shrink-0" />
                   <div>
                     <p className="font-semibold text-on-surface">Alamat</p>
-                    <p>Jl. Sudirman No. 100, Kebayoran Baru, Jakarta Selatan 12190</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Clock size={16} className="text-primary mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="font-semibold text-on-surface">Jam Operasional</p>
-                    <p>Senin – Jumat: 09.00 – 17.00 WIB</p>
-                    <p>Sabtu: 09.00 – 13.00 WIB</p>
-                    <p>Minggu & Libur Nasional: Tutup</p>
+                    <p>{PICKUP_STORE_ADDRESS}</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
                   <Mail size={16} className="text-primary mt-0.5 flex-shrink-0" />
                   <div>
                     <p className="font-semibold text-on-surface">Email</p>
-                    <p>support@pelataranumkm.id</p>
-                    <p>partnership@pelataranumkm.id</p>
+                    <a href={CONTACT_EMAIL_MAILTO} className="text-primary font-semibold hover:underline">
+                      {CONTACT_EMAIL}
+                    </a>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <Link2 size={16} className="text-primary mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="font-semibold text-on-surface">Link Productive</p>
+                    <a
+                      href={LINKPRODUCTIVE_WEBSITE_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary font-semibold hover:underline block"
+                    >
+                      linkproductive.com
+                    </a>
+                    <a
+                      href={LINKPRODUCTIVE_LINKTREE_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary font-semibold hover:underline block mt-1"
+                    >
+                      linktr.ee/linkproductive
+                    </a>
+                    <p className="text-xs mt-1 text-secondary">
+                      Website resmi, sosial media & layanan Link Productive
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <HeadphonesIcon size={16} className="text-primary mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="font-semibold text-on-surface">Chat Admin</p>
+                    <button
+                      type="button"
+                      onClick={openCustomerService}
+                      className="text-primary font-semibold hover:underline text-left"
+                    >
+                      Buka chat admin
+                    </button>
                   </div>
                 </div>
               </div>

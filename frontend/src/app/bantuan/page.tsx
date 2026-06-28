@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { 
   ShieldCheck, 
   ShoppingBag, 
@@ -12,9 +12,10 @@ import {
   Search, 
   ChevronDown, 
   ChevronUp, 
-  Award,
   HelpCircle
 } from "lucide-react";
+import { authService, USER_UPDATED_EVENT } from "@/backend/authService";
+import { getTimeGreeting } from "@/lib/greeting";
 
 // Help center topics with color tokens and icons
 const TOPICS = [
@@ -161,7 +162,7 @@ const FAQ_ARTICLES = [
     id: "faq-13",
     topicId: "mitra",
     question: "Bagaimana UMKM menitipkan produk (konsinyasi)?",
-    answer: "Daftar mitra di Akun > Program Seller. Setelah verifikasi, UMKM upload produk ke platform. Barang dijual lewat Pelataran UMKM — platform urus transaksi, pembayaran, dan layanan ke pembeli. Pendapatan dicatat ke saldo mitra."
+    answer: "Hubungi tim Pelataran UMKM via halaman Kontak atau Customer Service. Setelah kerja sama konsinyasi disepakati, admin mendaftarkan toko dan produk UMKM. Platform yang urus transaksi, pembayaran, dan layanan ke pembeli — pendapatan dicatat ke saldo mitra."
   },
   {
     id: "faq-14",
@@ -175,6 +176,29 @@ export default function HelpCenterPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [openFaqId, setOpenFaqId] = useState<string | null>(null);
+  const [greeting, setGreeting] = useState(() => getTimeGreeting());
+  const [displayName, setDisplayName] = useState("Anda");
+
+  useEffect(() => {
+    const syncUser = () => {
+      const user = authService.getCurrentUser();
+      setDisplayName(user?.nama_lengkap || user?.username || "Anda");
+    };
+    syncUser();
+    window.addEventListener("storage", syncUser);
+    window.addEventListener(USER_UPDATED_EVENT, syncUser);
+    return () => {
+      window.removeEventListener("storage", syncUser);
+      window.removeEventListener(USER_UPDATED_EVENT, syncUser);
+    };
+  }, []);
+
+  useEffect(() => {
+    const tick = () => setGreeting(getTimeGreeting());
+    tick();
+    const id = window.setInterval(tick, 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   // Filter FAQs based on query and/or selected topic
   const filteredFaqs = useMemo(() => {
@@ -203,23 +227,10 @@ export default function HelpCenterPage() {
         <div className="max-w-[1200px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 items-center relative">
           {/* Left Text / Search Block */}
           <div className="lg:col-span-7 space-y-6">
-            
-            {/* Awards indicators */}
-            <div className="flex flex-wrap gap-2 select-none">
-              <span className="bg-[#EFF6FF] text-[#1D4ED8] text-[9px] font-extrabold px-2 py-0.5 rounded border border-primary-pale flex items-center gap-1">
-                <Award size={10} />
-                CCW World Winner 2019-2022
-              </span>
-              <span className="bg-stone-100 text-stone-700 text-[9px] font-extrabold px-2 py-0.5 rounded border border-stone-200 flex items-center gap-1">
-                <Award size={10} />
-                Indonesia CS Champion 2022-2023
-              </span>
-            </div>
-
             {/* Headline */}
             <div className="space-y-2">
               <h2 className="font-headline text-3xl sm:text-4xl font-extrabold text-on-surface tracking-tight leading-tight">
-                Selamat Malam, <span className="text-primary">game</span>
+                {greeting}, <span className="text-primary">{displayName}</span>
               </h2>
               <p className="text-sm font-semibold text-secondary">
                 Ada kendala atau pertanyaan? Temukan solusinya dengan cepat di sini.
@@ -231,7 +242,7 @@ export default function HelpCenterPage() {
               <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-secondary pointer-events-none" />
               <input
                 type="text"
-                placeholder="Ketik kata kunci (misal: pengembalian barang, cara jadi seller)"
+                placeholder="Ketik kata kunci (misal: pengembalian barang, mitra konsinyasi)"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-11 pr-4 py-3.5 border border-[#EAE5E0] rounded-xl bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-on-surface font-semibold placeholder-secondary/60 transition"

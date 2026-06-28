@@ -97,8 +97,10 @@ export default function KonsinyasiPage() {
 
           <section className="bg-primary/5 border border-primary/20 rounded-xl p-6">
             <p className="text-sm text-on-surface leading-relaxed">
-              Ingin menitipkan produk? Daftar sebagai mitra UMKM di{" "}
-              <Link href="/account/seller" className="text-primary font-bold hover:underline">halaman pendaftaran toko</Link>.
+              Ingin menitipkan produk? Mitra UMKM didaftarkan oleh tim Pelataran UMKM (bukan lewat form online).
+              Hubungi kami lewat{" "}
+              <Link href="/kontak" className="text-primary font-bold hover:underline">halaman Kontak</Link>
+              {" "}atau Customer Service untuk koordinasi konsinyasi.
             </p>
           </section>
         </div>

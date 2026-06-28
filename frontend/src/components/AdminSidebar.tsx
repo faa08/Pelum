@@ -2,13 +2,19 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { authService } from "@/backend/authService";
 import { adminService } from "@/backend/adminService";
+import { useLogoutConfirm } from "@/hooks/useLogoutConfirm";
 
-export default function AdminSidebar() {
+export default function AdminSidebar({
+  mobileOpen = false,
+  onNavigate,
+}: {
+  mobileOpen?: boolean;
+  onNavigate?: () => void;
+}) {
   const pathname = usePathname();
-  const router = useRouter();
   const [adminUser, setAdminUser] = useState<ReturnType<typeof authService.getCurrentUser>>(null);
   const [pendingChatCount, setPendingChatCount] = useState(0);
 
@@ -20,10 +26,10 @@ export default function AdminSidebar() {
     return () => window.removeEventListener("storage", handleStorage);
   }, [pathname]);
 
-  const handleLogout = () => {
-    authService.logout();
-    router.push("/masuk?msg=logged_out");
-  };
+  const { requestLogout, LogoutConfirmDialog } = useLogoutConfirm({
+    redirectTo: "/masuk?msg=logged_out",
+    onBeforeLogout: () => onNavigate?.(),
+  });
 
   const displayName = adminUser?.nama_lengkap || adminUser?.username || "Superadmin";
   const avatarSrc = adminUser?.avatar || "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=100&auto=format&fit=crop";
@@ -32,6 +38,7 @@ export default function AdminSidebar() {
     { name: "Dashboard", href: "/admin/dashboard", icon: "grid_view" },
     { name: "Manajemen Toko", href: "/admin/stores", icon: "storefront" },
     { name: "Manajemen Produk", href: "/admin/products", icon: "inventory_2" },
+    { name: "Banner & Hero", href: "/admin/banners", icon: "view_carousel" },
     { name: "Pesanan", href: "/admin/orders", icon: "shopping_bag" },
     { name: "Pusat Chat", href: "/admin/chat", icon: "forum" },
     { name: "Pengiriman", href: "/admin/pengiriman", icon: "local_shipping" },
@@ -42,7 +49,11 @@ export default function AdminSidebar() {
   ];
 
   return (
-    <aside className="fixed left-0 top-0 h-screen w-72 bg-white shadow-[4px_0_24px_rgba(0,0,0,0.02)] flex flex-col py-6 px-4 z-40 overflow-y-auto">
+    <aside
+      className={`admin-sidebar-drawer fixed left-0 top-0 h-screen w-72 max-w-[85vw] bg-white shadow-[4px_0_24px_rgba(0,0,0,0.02)] flex flex-col py-6 px-4 z-50 overflow-y-auto lg:translate-x-0 ${
+        mobileOpen ? "is-open" : ""
+      }`}
+    >
       {/* Brand Header & Profile Info */}
       <div className="flex items-center gap-3 mb-8 px-4">
         <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 shadow-sm">
@@ -68,6 +79,7 @@ export default function AdminSidebar() {
             <Link
               key={item.name}
               href={item.href}
+              onClick={onNavigate}
               className={`flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm transition ${
                 isActive
                   ? "bg-[#1D4ED8] text-white font-bold"
@@ -94,6 +106,7 @@ export default function AdminSidebar() {
       <div className="pt-4 space-y-1">
         <Link
           href="/admin/help"
+          onClick={onNavigate}
           className="flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm text-[#3E3834] hover:bg-[#F5F3F0] hover:text-[#1F1B18] transition"
         >
           <span className="material-symbols-outlined text-[20px]">help_outline</span>
@@ -101,13 +114,14 @@ export default function AdminSidebar() {
         </Link>
         <button
           type="button"
-          onClick={handleLogout}
+          onClick={requestLogout}
           className="flex items-center gap-3 px-4 py-3 rounded-lg font-semibold text-sm text-[#1D4ED8] hover:bg-[#EFF6FF] transition w-full text-left"
         >
           <span className="material-symbols-outlined text-[20px]">logout</span>
           <span>Logout</span>
         </button>
       </div>
+      <LogoutConfirmDialog />
     </aside>
   );
 }

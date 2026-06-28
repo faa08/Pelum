@@ -1,15 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseAdmin } from "@/lib/supabase-admin";
+import { requireAdmin } from "@/lib/api-auth";
 import { generateStoreEmail } from "@/backend/sellerService";
 
 type UserRow = { id_user: string; role: string };
 type SellerRow = { id_seller: string };
 
-export async function GET() {
-  const { client: admin, error: configError } = createSupabaseAdmin();
-  if (!admin) {
-    return NextResponse.json({ error: configError || "Supabase admin tidak dikonfigurasi." }, { status: 503 });
-  }
+export async function GET(request: NextRequest) {
+  const auth = await requireAdmin(request);
+  if (!auth.ok) return auth.response;
+  const admin = auth.ctx.admin;
 
   const { data, error } = await admin
     .from("seller")
@@ -24,10 +23,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const { client: admin, error: configError } = createSupabaseAdmin();
-  if (!admin) {
-    return NextResponse.json({ error: configError || "Supabase admin tidak dikonfigurasi." }, { status: 503 });
-  }
+  const auth = await requireAdmin(request);
+  if (!auth.ok) return auth.response;
+  const admin = auth.ctx.admin;
 
   try {
     const body = await request.json();

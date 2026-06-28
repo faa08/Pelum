@@ -766,6 +766,8 @@ CREATE TABLE IF NOT EXISTS order_chat_message (
     sender_role  VARCHAR(20) NOT NULL CHECK (sender_role IN ('admin', 'customer')),
     sender_id    UUID REFERENCES users(id_user) ON DELETE SET NULL,
     text         TEXT NOT NULL,
+    delivered_at TIMESTAMPTZ,
+    read_at      TIMESTAMPTZ,
     created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -802,6 +804,8 @@ CREATE TABLE IF NOT EXISTS return_chat_message (
     sender_role  VARCHAR(20) NOT NULL CHECK (sender_role IN ('admin', 'customer')),
     sender_id    UUID REFERENCES users(id_user) ON DELETE SET NULL,
     text         TEXT NOT NULL,
+    delivered_at TIMESTAMPTZ,
+    read_at      TIMESTAMPTZ,
     created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -833,6 +837,8 @@ CREATE TABLE IF NOT EXISTS support_chat_message (
     sender_role  VARCHAR(20) NOT NULL CHECK (sender_role IN ('admin', 'customer')),
     sender_id    UUID REFERENCES users(id_user) ON DELETE SET NULL,
     text         TEXT NOT NULL,
+    delivered_at TIMESTAMPTZ,
+    read_at      TIMESTAMPTZ,
     created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -896,7 +902,105 @@ CREATE POLICY "Allow anon delete ikut_toko"
 
 NOTIFY pgrst, 'reload schema';
 
--- Akun admin default (login: admin@linkproductive.com / admin123)
+ALTER TABLE cart_item ADD COLUMN IF NOT EXISTS pilihan_varian JSONB;
+
+-- Storage bucket products (upload gambar produk & avatar via API/service role)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('products', 'products', true)
+ON CONFLICT (id) DO UPDATE SET public = EXCLUDED.public;
+
+DROP POLICY IF EXISTS "Public read products bucket" ON storage.objects;
+CREATE POLICY "Public read products bucket"
+    ON storage.objects FOR SELECT
+    USING (bucket_id = 'products');
+
+DROP POLICY IF EXISTS "Anon upload products bucket" ON storage.objects;
+DROP POLICY IF EXISTS "Anon update products bucket" ON storage.objects;
+
+-- Upload storage: user terautentikasi (admin/seller lewat Supabase Auth session)
+CREATE POLICY "Authenticated upload products bucket"
+    ON storage.objects FOR INSERT
+    WITH CHECK (bucket_id = 'products' AND auth.role() = 'authenticated');
+
+CREATE POLICY "Authenticated update products bucket"
+    ON storage.objects FOR UPDATE
+    USING (bucket_id = 'products' AND auth.role() = 'authenticated')
+    WITH CHECK (bucket_id = 'products' AND auth.role() = 'authenticated');
+
+-- Centang baca chat (WhatsApp-style): delivered_at + read_at
+ALTER TABLE order_chat_message ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
+ALTER TABLE order_chat_message ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
+ALTER TABLE support_chat_message ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
+ALTER TABLE support_chat_message ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
+ALTER TABLE return_chat_message ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
+ALTER TABLE return_chat_message ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
+
+-- ============================================================
+-- SUPABASE AUTH (login/regis pakai auth.users, bukan password plain di users)
+-- Setup di Dashboard Supabase:
+--   1. Authentication → Providers → Email → ON
+--   2. Confirm email → ON (wajib verifikasi inbox)
+--   3. URL Configuration → Redirect URLs:
+--        http://localhost:3000/auth/callback
+--        http://localhost:3000/auth/reset-password
+--        https://<domain-anda>/auth/callback
+--        https://<domain-anda>/auth/reset-password
+--   4. Buat user admin di Authentication → Users (email admin@linkproductive.com)
+--      atau invite admin — profil public.users disinkron via /api/auth/sync-profile
+-- Kolom users.password tidak dipakai lagi untuk login (boleh NULL).
+ALTER TABLE users ALTER COLUMN password DROP NOT NULL;
+
+-- Sinkron skema users lama → lengkap (jalankan jika sync-profile gagal: kolom tidak ditemukan)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS nama_lengkap VARCHAR(200);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS no_telp VARCHAR(20);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS nama_toko VARCHAR(150);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS jenis_kelamin VARCHAR(20);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS tanggal_lahir DATE;
+
+-- Checkout: referensi transaksi Midtrans + varian di order_item
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS transaction_ref VARCHAR(64);
+ALTER TABLE order_item ADD COLUMN IF NOT EXISTS pilihan_varian JSONB;
+CREATE INDEX IF NOT EXISTS idx_order_transaction_ref ON "order"(transaction_ref);
+
+-- Banner / hero (slider beranda & banner kategori — editable admin)
+CREATE TABLE IF NOT EXISTS site_banner (
+    id_banner       UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    banner_kind     VARCHAR(30) NOT NULL CHECK (banner_kind IN ('home_hero', 'category_hero')),
+    category_slug   VARCHAR(80) NOT NULL DEFAULT '',
+    badge           VARCHAR(120),
+    title_line1     VARCHAR(200),
+    title_line2     VARCHAR(200),
+    description     TEXT,
+    button_text     VARCHAR(80),
+    button_link     VARCHAR(500),
+    image_url       TEXT NOT NULL DEFAULT '',
+    image_position  VARCHAR(80) DEFAULT 'center center',
+    sort_order      INT NOT NULL DEFAULT 0,
+    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_site_banner_home ON site_banner(banner_kind, sort_order) WHERE banner_kind = 'home_hero';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_site_banner_category_unique
+    ON site_banner(category_slug) WHERE banner_kind = 'category_hero';
+
+ALTER TABLE site_banner ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public read site_banner" ON site_banner;
+CREATE POLICY "Public read site_banner"
+    ON site_banner FOR SELECT USING (is_active = true);
+
+DROP POLICY IF EXISTS "Allow anon site_banner" ON site_banner;
+CREATE POLICY "Allow anon site_banner"
+    ON site_banner FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- PRODUCTION: Jangan jalankan seed admin di bawah pada DB production.
+-- Buat admin via Supabase Auth Dashboard, lalu set role=admin di public.users.
+-- ============================================================
+-- Akun admin default (HANYA development / staging)
 INSERT INTO users (id_user, username, password, email, nama_lengkap, role)
 VALUES (
     'a0000001-0000-4000-8000-000000000001'::uuid,
@@ -911,4 +1015,102 @@ ON CONFLICT (email) DO UPDATE SET
     role       = 'admin',
     username   = EXCLUDED.username,
     nama_lengkap = EXCLUDED.nama_lengkap;
+
+-- ============================================================
+-- RLS KETAT (production) — ganti policy anon terbuka untuk data user
+-- Jalankan setelah Supabase Auth aktif (auth.uid() = users.id_user)
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION public.is_app_admin()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM users
+    WHERE id_user = auth.uid() AND role = 'admin'
+  );
+$$;
+
+-- Alamat: milik user sendiri atau admin
+DROP POLICY IF EXISTS "Allow anon read alamat" ON alamat;
+DROP POLICY IF EXISTS "Allow anon insert alamat" ON alamat;
+DROP POLICY IF EXISTS "Allow anon update alamat" ON alamat;
+DROP POLICY IF EXISTS "Allow anon delete alamat" ON alamat;
+
+CREATE POLICY "Users manage own alamat"
+    ON alamat FOR ALL
+    USING (id_user = auth.uid() OR public.is_app_admin())
+    WITH CHECK (id_user = auth.uid() OR public.is_app_admin());
+
+-- Keranjang
+DROP POLICY IF EXISTS "Allow anon cart" ON cart;
+DROP POLICY IF EXISTS "Allow anon cart_item" ON cart_item;
+
+CREATE POLICY "Users manage own cart"
+    ON cart FOR ALL
+    USING (id_user = auth.uid() OR public.is_app_admin())
+    WITH CHECK (id_user = auth.uid() OR public.is_app_admin());
+
+CREATE POLICY "Users manage own cart items"
+    ON cart_item FOR ALL
+    USING (
+      EXISTS (
+        SELECT 1 FROM cart c
+        WHERE c.id_cart = cart_item.id_cart
+          AND (c.id_user = auth.uid() OR public.is_app_admin())
+      )
+    )
+    WITH CHECK (
+      EXISTS (
+        SELECT 1 FROM cart c
+        WHERE c.id_cart = cart_item.id_cart
+          AND (c.id_user = auth.uid() OR public.is_app_admin())
+      )
+    );
+
+-- Pesanan
+DROP POLICY IF EXISTS "Allow anon read orders" ON "order";
+DROP POLICY IF EXISTS "Allow anon insert order" ON "order";
+DROP POLICY IF EXISTS "Allow anon update order" ON "order";
+
+CREATE POLICY "Users read own orders"
+    ON "order" FOR SELECT
+    USING (id_user = auth.uid() OR public.is_app_admin());
+
+CREATE POLICY "Users insert own orders"
+    ON "order" FOR INSERT
+    WITH CHECK (id_user = auth.uid() OR public.is_app_admin());
+
+CREATE POLICY "Users update own orders"
+    ON "order" FOR UPDATE
+    USING (id_user = auth.uid() OR public.is_app_admin())
+    WITH CHECK (id_user = auth.uid() OR public.is_app_admin());
+
+-- Profil user
+DROP POLICY IF EXISTS "Allow anon read users" ON users;
+DROP POLICY IF EXISTS "Allow anon update users" ON users;
+
+CREATE POLICY "Users read profiles"
+    ON users FOR SELECT
+    USING (id_user = auth.uid() OR public.is_app_admin());
+
+CREATE POLICY "Users update own profile"
+    ON users FOR UPDATE
+    USING (id_user = auth.uid() OR public.is_app_admin())
+    WITH CHECK (id_user = auth.uid() OR public.is_app_admin());
+
+-- Produk: tulis hanya admin (baca tetap publik)
+DROP POLICY IF EXISTS "Allow anon insert produk" ON produk;
+DROP POLICY IF EXISTS "Allow anon update produk" ON produk;
+DROP POLICY IF EXISTS "Allow anon delete produk" ON produk;
+
+CREATE POLICY "Admin manage produk"
+    ON produk FOR ALL
+    USING (public.is_app_admin())
+    WITH CHECK (public.is_app_admin());
+
+NOTIFY pgrst, 'reload schema';
 

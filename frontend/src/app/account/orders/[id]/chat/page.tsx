@@ -1,21 +1,30 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { authService } from "@/backend/authService";
-import { orderChatService, OrderChatMessage } from "@/backend/orderChatService";
+import { orderChatService } from "@/backend/orderChatService";
+import ChatReadReceipt from "@/components/ChatReadReceipt";
+import { useChatPolling } from "@/hooks/useChatPolling";
+import { useChatScroll } from "@/hooks/useChatScroll";
 
 export default function OrderChatPage() {
   const params = useParams();
   const router = useRouter();
   const orderId = String(params.id || "");
   const [chatId, setChatId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<OrderChatMessage[]>([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const fetchMessages = useCallback(
+    (id: string) => orderChatService.getMessages(id, "customer", { markRead: true }),
+    []
+  );
+
+  const { messages, refresh } = useChatPolling(chatId, fetchMessages);
+  const { containerRef, onScroll, scrollToBottomAfterSend } = useChatScroll(messages);
 
   useEffect(() => {
     async function load() {
@@ -35,17 +44,11 @@ export default function OrderChatPage() {
 
       if (room?.id_chat) {
         setChatId(room.id_chat);
-        const msgs = await orderChatService.getMessages(room.id_chat);
-        setMessages(msgs);
       }
       setLoading(false);
     }
     load();
   }, [orderId, router]);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,9 +58,9 @@ export default function OrderChatPage() {
     setSending(true);
     const ok = await orderChatService.sendMessage(chatId, "customer", user.id_user, text.trim());
     if (ok) {
-      const msgs = await orderChatService.getMessages(chatId);
-      setMessages(msgs);
+      await refresh();
       setText("");
+      scrollToBottomAfterSend();
     }
     setSending(false);
   };
@@ -88,12 +91,13 @@ export default function OrderChatPage() {
       </header>
 
       <div className="bg-white border border-surface-container rounded-xl shadow-sm flex flex-col" style={{ height: "min(520px, 70vh)" }}>
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div ref={containerRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-4 space-y-3">
           {messages.length === 0 && (
             <p className="text-center text-secondary text-sm py-8">Belum ada pesan. Admin akan segera menghubungi Anda.</p>
           )}
           {messages.map((msg) => {
             const isAdmin = msg.sender_role === "admin";
+            const isOwn = !isAdmin;
             return (
               <div key={msg.id_message} className={`flex ${isAdmin ? "justify-start" : "justify-end"}`}>
                 <div
@@ -107,14 +111,16 @@ export default function OrderChatPage() {
                     <p className="text-[10px] font-extrabold uppercase tracking-wider opacity-70 mb-1">Admin</p>
                   )}
                   <p className="leading-relaxed">{msg.text}</p>
-                  <p className={`text-[10px] mt-1 ${isAdmin ? "text-secondary" : "text-white/70"}`}>
-                    {new Date(msg.created_at).toLocaleString("id-ID", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}
+                  <p className={`text-[10px] mt-1 flex items-center justify-end gap-1 ${isAdmin ? "text-secondary" : "text-white/70"}`}>
+                    <span>
+                      {new Date(msg.created_at).toLocaleString("id-ID", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}
+                    </span>
+                    {isOwn && <ChatReadReceipt message={msg} onLight />}
                   </p>
                 </div>
               </div>
             );
           })}
-          <div ref={bottomRef} />
         </div>
 
         <form onSubmit={handleSend} className="border-t border-surface-container p-4 flex gap-2">

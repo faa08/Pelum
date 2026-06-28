@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { authService } from "@/backend/authService";
-import { returnChatService, ReturnChatMessage } from "@/backend/returnService";
+import { returnChatService } from "@/backend/returnService";
+import ChatReadReceipt from "@/components/ChatReadReceipt";
+import { useChatPolling } from "@/hooks/useChatPolling";
+import { useChatScroll } from "@/hooks/useChatScroll";
 import { RETURN_EVIDENCE_GUIDE, RETURN_EVIDENCE_NOTE } from "@/lib/returnConstants";
 
 export default function ReturnChatPage() {
@@ -12,12 +15,18 @@ export default function ReturnChatPage() {
   const router = useRouter();
   const returId = String(params.id || "");
   const [chatId, setChatId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ReturnChatMessage[]>([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [showGuide, setShowGuide] = useState(true);
-  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const fetchMessages = useCallback(
+    (id: string) => returnChatService.getMessages(id, "customer", { markRead: true }),
+    []
+  );
+
+  const { messages, refresh } = useChatPolling(chatId, fetchMessages);
+  const { containerRef, onScroll, scrollToBottomAfterSend } = useChatScroll(messages);
 
   useEffect(() => {
     async function load() {
@@ -30,17 +39,11 @@ export default function ReturnChatPage() {
       const room = await returnChatService.getRoomByRetur(returId);
       if (room?.id_chat) {
         setChatId(room.id_chat);
-        const msgs = await returnChatService.getMessages(room.id_chat);
-        setMessages(msgs);
       }
       setLoading(false);
     }
     load();
   }, [returId, router]);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,9 +53,9 @@ export default function ReturnChatPage() {
     setSending(true);
     const ok = await returnChatService.sendMessage(chatId, "customer", user.id_user, text.trim());
     if (ok) {
-      const msgs = await returnChatService.getMessages(chatId);
-      setMessages(msgs);
+      await refresh();
       setText("");
+      scrollToBottomAfterSend();
     }
     setSending(false);
   };
@@ -109,22 +112,25 @@ export default function ReturnChatPage() {
       </div>
 
       <div className="bg-white border border-surface-container rounded-xl shadow-sm flex flex-col" style={{ height: "min(480px, 65vh)" }}>
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div ref={containerRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-4 space-y-3">
           {messages.map((msg) => {
             const isAdmin = msg.sender_role === "admin";
+            const isOwn = !isAdmin;
             return (
               <div key={msg.id_message} className={`flex ${isAdmin ? "justify-start" : "justify-end"}`}>
                 <div className={`max-w-[80%] rounded-xl px-4 py-2.5 text-sm ${isAdmin ? "bg-surface-container text-on-surface rounded-bl-sm" : "bg-orange-500 text-white rounded-br-sm"}`}>
                   {isAdmin && <p className="text-[10px] font-extrabold uppercase tracking-wider opacity-70 mb-1">Admin</p>}
                   <p className="leading-relaxed">{msg.text}</p>
-                  <p className={`text-[10px] mt-1 ${isAdmin ? "text-secondary" : "text-white/70"}`}>
-                    {new Date(msg.created_at).toLocaleString("id-ID", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}
+                  <p className={`text-[10px] mt-1 flex items-center justify-end gap-1 ${isAdmin ? "text-secondary" : "text-white/70"}`}>
+                    <span>
+                      {new Date(msg.created_at).toLocaleString("id-ID", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}
+                    </span>
+                    {isOwn && <ChatReadReceipt message={msg} onLight />}
                   </p>
                 </div>
               </div>
             );
           })}
-          <div ref={bottomRef} />
         </div>
 
         <form onSubmit={handleSend} className="border-t border-surface-container p-4 flex gap-2">

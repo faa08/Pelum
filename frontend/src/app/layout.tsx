@@ -3,6 +3,7 @@ import { Plus_Jakarta_Sans, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import ToastProvider from "@/components/ToastProvider";
 import CustomerServiceProvider from "@/components/CustomerServiceProvider";
+import AuthSessionProvider from "@/components/AuthSessionProvider";
 
 const jakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -44,11 +45,13 @@ const jakarta = Plus_Jakarta_Sans({
          />
        </head>
        <body style={{ fontFamily: "var(--font-jakarta), system-ui, sans-serif" }}>
-         <ToastProvider>
-           <CustomerServiceProvider>
-             {children}
-           </CustomerServiceProvider>
-         </ToastProvider>
+        <ToastProvider>
+          <AuthSessionProvider>
+            <CustomerServiceProvider>
+              {children}
+            </CustomerServiceProvider>
+          </AuthSessionProvider>
+        </ToastProvider>
        </body>
      </html>
    );

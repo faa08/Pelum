@@ -7,7 +7,10 @@ import { Headphones, X, Send, Bot, Loader2, UserCircle } from "lucide-react";
 import "./CustomerService.css";
 import { CUSTOMER_SERVICE_WELCOME } from "@/data/customerServiceKnowledge";
 import { authService } from "@/backend/authService";
+import { apiFetch } from "@/lib/api-client";
 import { supportChatService, SupportChatMessage } from "@/backend/supportChatService";
+import ChatReadReceipt from "@/components/ChatReadReceipt";
+import { useChatPolling } from "@/hooks/useChatPolling";
 
 interface AiMessage {
   id: string;
@@ -76,7 +79,7 @@ function AiChatPanel() {
         .filter((m) => m.id !== "welcome")
         .map((m) => ({ role: m.role, text: m.text }));
 
-      const res = await fetch("/api/customer-service", {
+      const res = await apiFetch("/api/customer-service", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: history }),
@@ -155,13 +158,18 @@ function AiChatPanel() {
 
 function AdminChatPanel() {
   const [chatId, setChatId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<SupportChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [initError, setInitError] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [user, setUser] = useState<ReturnType<typeof authService.getCurrentUser>>(null);
+
+  const fetchMessages = useCallback(
+    (id: string) => supportChatService.getMessages(id, "customer", { markRead: true }),
+    []
+  );
+  const { messages, refresh } = useChatPolling(chatId, fetchMessages);
 
   useEffect(() => {
     setUser(authService.getCurrentUser());
@@ -177,8 +185,6 @@ function AdminChatPanel() {
       const id = await supportChatService.ensureRoom(user.id_user);
       if (id) {
         setChatId(id);
-        const msgs = await supportChatService.getMessages(id);
-        setMessages(msgs);
       } else {
         setInitError(
           "Chat belum siap. Jalankan migrasi support_chat di Supabase SQL Editor, lalu refresh halaman."
@@ -214,8 +220,7 @@ function AdminChatPanel() {
 
     const ok = await supportChatService.sendMessage(activeChatId, "customer", user.id_user, input.trim());
     if (ok) {
-      const msgs = await supportChatService.getMessages(activeChatId);
-      setMessages(msgs);
+      await refresh();
       setInput("");
     } else {
       setInitError("Pesan gagal terkirim. Coba lagi sebentar.");
@@ -275,6 +280,11 @@ function AdminChatPanel() {
                     hour: "2-digit",
                     minute: "2-digit",
                   })}
+                  {!isAdmin && (
+                    <span className="cs-msg-receipt">
+                      <ChatReadReceipt message={msg} onLight />
+                    </span>
+                  )}
                 </span>
               </div>
             </div>
@@ -304,8 +314,16 @@ function AdminChatPanel() {
   );
 }
 
-function CustomerServiceChat({ onClose, fullPage = false }: { onClose?: () => void; fullPage?: boolean }) {
-  const [mode, setMode] = useState<ChatMode>("ai");
+function CustomerServiceChat({
+  onClose,
+  fullPage = false,
+  initialMode = "ai",
+}: {
+  onClose?: () => void;
+  fullPage?: boolean;
+  initialMode?: ChatMode;
+}) {
+  const [mode, setMode] = useState<ChatMode>(initialMode);
 
   return (
     <div className={`cs-chat ${fullPage ? "cs-chat--full" : ""}`}>

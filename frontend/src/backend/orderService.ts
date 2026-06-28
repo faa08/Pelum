@@ -1,3 +1,5 @@
+import { apiFetch } from "@/lib/api-client";
+
 export const CHECKOUT_CART_KEY = "pelum_checkout_cart_items";
 export const CHECKOUT_ORDERS_KEY = "pelum_checkout_orders";
 
@@ -30,7 +32,7 @@ export interface CheckoutPayload {
 
 export const orderService = {
   async checkout(payload: CheckoutPayload): Promise<CheckoutResponse> {
-    const res = await fetch("/api/checkout", {
+    const res = await apiFetch("/api/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -88,7 +90,7 @@ export const orderService = {
     success = true,
     options?: { createChat?: boolean; paymentType?: "digital" | "offline" }
   ): Promise<{ chatIds?: string[] }> {
-    const res = await fetch("/api/checkout/complete", {
+    const res = await apiFetch("/api/checkout/complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

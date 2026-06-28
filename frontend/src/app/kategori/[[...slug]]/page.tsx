@@ -20,6 +20,7 @@ import Navbar from "@/components/Navbar";
 import SearchBar from "@/components/SearchBar";
 import Footer from "@/components/Footer";
 import CategoryHero from "@/components/CategoryHero";
+import { fetchCategoryHero, type SiteBanner } from "@/backend/bannerService";
 import { getCategoryHeroConfig } from "@/data/categoryHero";
 import { productService } from "@/backend/productService";
 import { parseProductImg, ProductGridImage } from "@/lib/productUi";
@@ -60,6 +61,11 @@ export default function CategoryPage({ params }: { params: Promise<{ slug?: stri
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState("terpopuler");
+  const [categoryHero, setCategoryHero] = useState<SiteBanner | null>(null);
+
+  useEffect(() => {
+    fetchCategoryHero(activeSlug).then(setCategoryHero);
+  }, [activeSlug]);
 
   useEffect(() => {
     async function loadProducts() {
@@ -90,6 +96,13 @@ export default function CategoryPage({ params }: { params: Promise<{ slug?: stri
   // Find active category
   const currentCategory = CATEGORIES_LIST.find(c => c.slug === activeSlug) || CATEGORIES_LIST[0];
   const heroConfig = getCategoryHeroConfig(activeSlug);
+  const heroTitle =
+    categoryHero?.title_line1 ||
+    (activeSlug ? `Kategori ${currentCategory.name}` : "Semua Kategori Produk");
+  const heroDescription = categoryHero?.description || heroConfig.description;
+  const heroImage = categoryHero?.image_url || heroConfig.backgroundImage;
+  const heroPosition = categoryHero?.image_position || heroConfig.backgroundPosition;
+  const heroBadge = categoryHero?.badge || "Galeri UMKM Pilihan";
 
   // Filter products by selected category slug
   const filteredProducts = activeSlug
@@ -129,16 +142,15 @@ export default function CategoryPage({ params }: { params: Promise<{ slug?: stri
 
           {/* Banner Hero Kategori */}
           <CategoryHero
-            title={activeSlug ? `Kategori ${currentCategory.name}` : "Semua Kategori Produk"}
-            description={heroConfig.description}
-            backgroundImage={heroConfig.backgroundImage}
-            backgroundPosition={heroConfig.backgroundPosition}
+            badge={heroBadge}
+            title={heroTitle}
+            description={heroDescription}
+            backgroundImage={heroImage}
+            backgroundPosition={heroPosition}
           />
 
-          <div style={{ display: "grid", gridTemplateColumns: "250px 1fr", gap: 32, alignItems: "start" }}>
-            
-            {/* Left Column: Sidebar Kategori */}
-            <aside style={{
+          <div className="catalog-layout catalog-layout--wide">
+            <aside className="catalog-sidebar" style={{
               background: "white",
               border: `1.5px solid ${C.border}`,
               borderRadius: 12,

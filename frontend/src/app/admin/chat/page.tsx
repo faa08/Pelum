@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useState, useRef, Suspense } from "react";
+import { useEffect, useState, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { authService } from "@/backend/authService";
 import { supportChatService, SupportChatMessage, SupportChatRoom } from "@/backend/supportChatService";
 import { orderChatService, OrderChatMessage, OrderChatRoom } from "@/backend/orderChatService";
 import { returnChatService } from "@/backend/returnService";
 import { getOrderPaymentDisplay } from "@/lib/checkoutConstants";
+import ChatReadReceipt from "@/components/ChatReadReceipt";
+import { useChatPolling } from "@/hooks/useChatPolling";
+import { useChatScroll } from "@/hooks/useChatScroll";
+import type { ChatReceiptFields } from "@/lib/chatReadReceipts";
 
 type TabId = "support" | "shipping" | "return";
 
@@ -20,10 +24,12 @@ function ChatBubble({
   text,
   time,
   isAdmin,
+  message,
 }: {
   text: string;
   time: string;
   isAdmin: boolean;
+  message?: ChatReceiptFields;
 }) {
   return (
     <div className={`flex ${isAdmin ? "justify-end" : "justify-start"}`}>
@@ -35,7 +41,10 @@ function ChatBubble({
         }`}
       >
         <p className="leading-relaxed">{text}</p>
-        <p className={`text-[10px] mt-1 ${isAdmin ? "text-white/70" : "text-[#8E8680]"}`}>{time}</p>
+        <p className={`text-[10px] mt-1 flex items-center justify-end gap-1 ${isAdmin ? "text-white/70" : "text-[#8E8680]"}`}>
+          <span>{time}</span>
+          {isAdmin && message && <ChatReadReceipt message={message} onLight />}
+        </p>
       </div>
     </div>
   );
@@ -52,11 +61,16 @@ function formatOrderId(id: string) {
 function SupportPanel() {
   const [rooms, setRooms] = useState<SupportChatRoom[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<SupportChatMessage[]>([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const fetchMessages = useCallback(
+    (id: string) => supportChatService.getMessages(id, "admin", { markRead: true }),
+    []
+  );
+  const { messages, refresh } = useChatPolling(selectedId, fetchMessages);
+  const { containerRef, onScroll, scrollToBottomAfterSend } = useChatScroll(messages);
 
   useEffect(() => {
     supportChatService.listRoomsForAdmin().then((data) => {
@@ -66,15 +80,6 @@ function SupportPanel() {
     });
   }, []);
 
-  useEffect(() => {
-    if (!selectedId) return;
-    supportChatService.getMessages(selectedId).then(setMessages);
-  }, [selectedId]);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     const user = authService.getCurrentUser();
@@ -82,8 +87,9 @@ function SupportPanel() {
     setSending(true);
     const ok = await supportChatService.sendMessage(selectedId, "admin", user?.id_user || null, text.trim());
     if (ok) {
-      setMessages(await supportChatService.getMessages(selectedId));
+      await refresh();
       setText("");
+      scrollToBottomAfterSend();
     }
     setSending(false);
   };
@@ -120,10 +126,12 @@ function SupportPanel() {
             text={msg.text}
             time={formatTime(msg.created_at)}
             isAdmin={msg.sender_role === "admin"}
+            message={msg}
           />
         ))
       }
-      bottomRef={bottomRef}
+      containerRef={containerRef}
+      onScroll={onScroll}
       text={text}
       setText={setText}
       onSend={handleSend}
@@ -137,12 +145,17 @@ function SupportPanel() {
 function ShippingPanel({ focusOrderId }: { focusOrderId?: string | null }) {
   const [rooms, setRooms] = useState<OrderChatRoom[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<OrderChatMessage[]>([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const selectedRoom = rooms.find((r) => r.id_chat === selectedId);
+
+  const fetchMessages = useCallback(
+    (id: string) => orderChatService.getMessages(id, "admin", { markRead: true }),
+    []
+  );
+  const { messages, refresh } = useChatPolling(selectedId, fetchMessages);
+  const { containerRef, onScroll, scrollToBottomAfterSend } = useChatScroll(messages);
 
   useEffect(() => {
     orderChatService.listRoomsForAdmin().then((data) => {
@@ -161,15 +174,6 @@ function ShippingPanel({ focusOrderId }: { focusOrderId?: string | null }) {
     });
   }, [focusOrderId]);
 
-  useEffect(() => {
-    if (!selectedId) return;
-    orderChatService.getMessages(selectedId).then(setMessages);
-  }, [selectedId]);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     const user = authService.getCurrentUser();
@@ -177,8 +181,9 @@ function ShippingPanel({ focusOrderId }: { focusOrderId?: string | null }) {
     setSending(true);
     const ok = await orderChatService.sendMessage(selectedId, "admin", user?.id_user || null, text.trim());
     if (ok) {
-      setMessages(await orderChatService.getMessages(selectedId));
+      await refresh();
       setText("");
+      scrollToBottomAfterSend();
     }
     setSending(false);
   };
@@ -232,9 +237,11 @@ function ShippingPanel({ focusOrderId }: { focusOrderId?: string | null }) {
           text={msg.text}
           time={formatTime(msg.created_at)}
           isAdmin={msg.sender_role === "admin"}
+          message={msg}
         />
       ))}
-      bottomRef={bottomRef}
+      containerRef={containerRef}
+      onScroll={onScroll}
       text={text}
       setText={setText}
       onSend={handleSend}
@@ -255,11 +262,16 @@ function ReturnPanel() {
     }[]
   >([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<{ id_message: string; sender_role: string; text: string; created_at: string }[]>([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const fetchMessages = useCallback(
+    (id: string) => returnChatService.getMessages(id, "admin", { markRead: true }),
+    []
+  );
+  const { messages, refresh } = useChatPolling(selectedId, fetchMessages);
+  const { containerRef, onScroll, scrollToBottomAfterSend } = useChatScroll(messages);
 
   useEffect(() => {
     returnChatService.listRoomsForAdmin().then((data) => {
@@ -269,15 +281,6 @@ function ReturnPanel() {
     });
   }, []);
 
-  useEffect(() => {
-    if (!selectedId) return;
-    returnChatService.getMessages(selectedId).then(setMessages);
-  }, [selectedId]);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     const user = authService.getCurrentUser();
@@ -285,8 +288,9 @@ function ReturnPanel() {
     setSending(true);
     const ok = await returnChatService.sendMessage(selectedId, "admin", user?.id_user || null, text.trim());
     if (ok) {
-      setMessages(await returnChatService.getMessages(selectedId));
+      await refresh();
       setText("");
+      scrollToBottomAfterSend();
     }
     setSending(false);
   };
@@ -322,9 +326,11 @@ function ReturnPanel() {
           text={msg.text}
           time={formatTime(msg.created_at)}
           isAdmin={msg.sender_role === "admin"}
+          message={msg}
         />
       ))}
-      bottomRef={bottomRef}
+      containerRef={containerRef}
+      onScroll={onScroll}
       text={text}
       setText={setText}
       onSend={handleSend}
@@ -344,7 +350,8 @@ function ChatLayout({
   headerTitle,
   headerSub,
   messages,
-  bottomRef,
+  containerRef,
+  onScroll,
   text,
   setText,
   onSend,
@@ -360,7 +367,8 @@ function ChatLayout({
   headerTitle?: string;
   headerSub?: string;
   messages: React.ReactNode;
-  bottomRef: React.RefObject<HTMLDivElement | null>;
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  onScroll: () => void;
   text: string;
   setText: (v: string) => void;
   onSend: (e: React.FormEvent) => void;
@@ -395,9 +403,8 @@ function ChatLayout({
                 {headerSub && <p className="text-xs text-[#8E8680]">{headerSub}</p>}
               </div>
             )}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-[360px]">
+            <div ref={containerRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-4 space-y-3 min-h-[360px]">
               {messages}
-              <div ref={bottomRef} />
             </div>
             <form onSubmit={onSend} className="border-t border-[#EAE5E0] p-4 flex gap-2">
               <input

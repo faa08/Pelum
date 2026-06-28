@@ -3,25 +3,35 @@
 import { useEffect, useState, Suspense, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Loader2, CheckCircle2, ArrowRight } from "lucide-react";
+import { Loader2, CheckCircle2, ArrowRight, Clock } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { authService } from "@/backend/authService";
 import { orderService } from "@/backend/orderService";
+import { apiFetch } from "@/lib/api-client";
+
+const isDevSimulator =
+  process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_ALLOW_PAYMENT_SIMULATOR === "true";
 
 function PaymentContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const ref = searchParams.get("ref") || "";
+  const ref = searchParams.get("ref") || searchParams.get("orderId") || "";
   const amount = Number(searchParams.get("amount")) || 0;
-  const finishReturn = searchParams.get("finish") === "1";
 
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [waitingMidtrans, setWaitingMidtrans] = useState(false);
   const [orders, setOrders] = useState<{ id_order: string }[]>([]);
   const [chatOrderId, setChatOrderId] = useState<string | null>(null);
-  const [autoFinishAttempted, setAutoFinishAttempted] = useState(false);
+
+  const markSuccess = useCallback((orderList: { id_order: string }[]) => {
+    orderService.clearCheckoutSession();
+    sessionStorage.removeItem("pelum_checkout_voucher");
+    setChatOrderId(orderList[0]?.id_order || null);
+    setSuccess(true);
+  }, []);
 
   useEffect(() => {
     const user = authService.getCurrentUser();
@@ -37,10 +47,39 @@ function PaymentContent() {
     }
     setOrders(placed.orders);
     setLoading(false);
-  }, [router]);
+
+    if (ref && !isDevSimulator) {
+      setWaitingMidtrans(true);
+    }
+  }, [router, ref]);
+
+  useEffect(() => {
+    if (!waitingMidtrans || !ref || success) return;
+
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await apiFetch(`/api/payment/status?ref=${encodeURIComponent(ref)}`);
+        const data = await res.json();
+        if (!cancelled && data.paid) {
+          markSuccess(data.orders?.length ? data.orders : orders);
+          setWaitingMidtrans(false);
+        }
+      } catch {
+        /* retry */
+      }
+    };
+
+    poll();
+    const interval = setInterval(poll, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [waitingMidtrans, ref, success, orders, markSuccess]);
 
   const handlePaySuccess = useCallback(async () => {
-    if (!orders.length) return;
+    if (!orders.length || !isDevSimulator) return;
     setCompleting(true);
     try {
       await orderService.completePayment(
@@ -48,23 +87,13 @@ function PaymentContent() {
         true,
         { createChat: true, paymentType: "digital" }
       );
-      orderService.clearCheckoutSession();
-      sessionStorage.removeItem("pelum_checkout_voucher");
-      setChatOrderId(orders[0]?.id_order || null);
-      setSuccess(true);
+      markSuccess(orders);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Gagal memverifikasi pembayaran.");
     } finally {
       setCompleting(false);
     }
-  }, [orders]);
-
-  useEffect(() => {
-    if (finishReturn && orders.length > 0 && !success && !autoFinishAttempted && !completing) {
-      setAutoFinishAttempted(true);
-      handlePaySuccess();
-    }
-  }, [finishReturn, orders, success, autoFinishAttempted, completing, handlePaySuccess]);
+  }, [orders, markSuccess]);
 
   if (loading) {
     return (
@@ -81,7 +110,7 @@ function PaymentContent() {
           <CheckCircle2 size={56} color="#16A34A" style={{ margin: "0 auto 16px" }} />
           <h1 style={{ fontSize: "1.25rem", fontWeight: 800, marginBottom: 8 }}>Pembayaran Berhasil</h1>
           <p style={{ fontSize: "0.875rem", color: "#5C5550", marginBottom: 24 }}>
-            Admin Pelataran UMKM akan menghubungi Anda lewat chat untuk koordinasi pengiriman (alamat, kurir, jadwal).
+            Admin Pelataran UMKM akan menghubungi Anda lewat chat untuk koordinasi pengiriman.
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {chatOrderId && (
@@ -105,6 +134,24 @@ function PaymentContent() {
     );
   }
 
+  if (waitingMidtrans) {
+    return (
+      <main style={{ background: "#FCFCFA", minHeight: "70vh", padding: "48px 24px" }}>
+        <div style={{ maxWidth: 520, margin: "0 auto", background: "white", borderRadius: 16, border: "1px solid #EAE5E0", padding: 32, textAlign: "center" }}>
+          <Clock size={48} color="#1D4ED8" style={{ margin: "0 auto 16px" }} />
+          <h1 style={{ fontSize: "1.25rem", fontWeight: 800, marginBottom: 8 }}>Menunggu Konfirmasi Pembayaran</h1>
+          <p style={{ fontSize: "0.875rem", color: "#5C5550", marginBottom: 16 }}>
+            Pembayaran Anda sedang diverifikasi oleh Midtrans. Halaman ini akan otomatis diperbarui.
+          </p>
+          {ref && (
+            <p style={{ fontSize: "0.75rem", color: "#8E8680" }}>Ref: {ref}</p>
+          )}
+          <Loader2 size={28} color="#1D4ED8" className="animate-spin" style={{ marginTop: 20 }} />
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main style={{ background: "#FCFCFA", minHeight: "70vh", padding: "48px 24px" }}>
       <div style={{
@@ -115,11 +162,11 @@ function PaymentContent() {
           fontSize: "0.65rem", fontWeight: 800, color: "white", background: "#1D4ED8",
           padding: "4px 8px", borderRadius: 4, letterSpacing: "0.05em", textTransform: "uppercase",
         }}>
-          Simulator Midtrans
+          Mode Pengembangan
         </span>
-        <h1 style={{ fontSize: "1.25rem", fontWeight: 800, margin: "12px 0 8px" }}>Pembayaran Digital</h1>
+        <h1 style={{ fontSize: "1.25rem", fontWeight: 800, margin: "12px 0 8px" }}>Simulator Pembayaran</h1>
         <p style={{ fontSize: "0.8125rem", color: "#5C5550", marginBottom: 24 }}>
-          Midtrans belum dikonfigurasi. Gunakan tombol di bawah untuk mensimulasikan pembayaran berhasil.
+          Midtrans belum dikonfigurasi. Gunakan tombol di bawah hanya untuk pengujian lokal.
         </p>
 
         <div style={{ background: "#EFF6FF", borderRadius: 10, padding: 16, marginBottom: 24 }}>

@@ -381,7 +381,13 @@ export default function AdminReportsPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border bg-green-50 text-green-700 border-green-200`}>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
+                          store.status === "Aktif"
+                            ? "bg-green-50 text-green-700 border-green-200"
+                            : "bg-red-50 text-red-700 border-red-200"
+                        }`}
+                      >
                         {store.status}
                       </span>
                     </td>

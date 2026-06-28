@@ -24,6 +24,16 @@ import { returnService } from "@/backend/returnService";
 import { orderService } from "@/backend/orderService";
 import { supabase } from "@/backend/supabase";
 import { productToCard, type ProductCard } from "@/lib/productUi";
+import {
+  formatVariantPriceRange,
+  getGalleryImages,
+  getSelectedVariantLabel,
+  getSelectedVariantPrice,
+  getSelectedVariantStock,
+  getActiveVariantPicks,
+  hasSelectedVariantPrice,
+  isVisualVariantGroup,
+} from "@/lib/productVariants";
 import { useCustomerService } from "@/components/CustomerServiceProvider";
 
 const THUMBNAILS = [
@@ -45,39 +55,6 @@ function formatPrice(p: number) {
   return `Rp ${p.toLocaleString("id-ID")}`;
 }
 
-function getVariantPriceRange(product: Product): string {
-  const prices = new Set<number>([product.harga]);
-  product.variants?.forEach((g) => {
-    g.options.forEach((o) => {
-      if (o.price != null && o.price > 0) prices.add(o.price);
-    });
-  });
-  const arr = [...prices].sort((a, b) => a - b);
-  if (arr.length <= 1) return formatPrice(arr[0]);
-  return `${formatPrice(arr[0])} - ${formatPrice(arr[arr.length - 1])}`;
-}
-
-function getSelectedVariantPrice(product: Product, activeVariants: Record<number, number>): number {
-  let price = product.harga;
-  product.variants?.forEach((group, gi) => {
-    const oi = activeVariants[gi] ?? 0;
-    const opt = group.options[oi];
-    if (opt?.price != null && opt.price > 0) price = opt.price;
-  });
-  return price;
-}
-
-function getSelectedVariantLabel(product: Product, activeVariants: Record<number, number>): string {
-  if (!product.variants?.length) return "";
-  return product.variants
-    .map((g, gi) => {
-      const oi = activeVariants[gi] ?? 0;
-      return g.options[oi]?.name;
-    })
-    .filter(Boolean)
-    .join(", ");
-}
-
 interface Review {
   id: string;
   name: string;
@@ -88,59 +65,10 @@ interface Review {
   image?: string | null;
 }
 
-function isWeakDetailText(value?: string | null): boolean {
-  if (!value?.trim()) return true;
-  const t = value.trim();
-  if (t === "-" || t === "—") return true;
-  if (t.length <= 3 && /^[a-z]+$/i.test(t)) return true;
-  return false;
-}
-
-function buildProductInfoDisplay(product: Product) {
-  const cat = (product.category || "").toLowerCase();
-  const isKeramik = cat.includes("keramik") || cat.includes("kerajinan");
-  const isTekstil = cat.includes("batik") || cat.includes("tekstil") || cat.includes("kain");
-
-  let bahan = product.bahan?.trim();
-  if (isWeakDetailText(bahan)) {
-    if (isKeramik) bahan = "Keramik food-grade, aman untuk makanan & minuman";
-    else if (isTekstil) bahan = "Kain katun / rayon premium, nyaman di kulit";
-    else bahan = "Bahan pilihan berkualitas dari pengrajin UMKM";
-  }
-
-  let asal = product.asal_produk?.trim();
-  if (isWeakDetailText(asal)) {
-    asal = "Buatan tangan pengrajin lokal Indonesia";
-  }
-
-  let berat: string;
-  if (product.berat && product.berat > 0) {
-    berat = `${product.berat.toLocaleString("id-ID")} gram`;
-  } else if (isKeramik) {
-    berat = "Estimasi 400–800 gram (tergantung ukuran)";
-  } else {
-    berat = "Estimasi 300–600 gram";
-  }
-
-  let ketahanan = product.ketahanan?.trim();
-  if (isWeakDetailText(ketahanan)) {
-    if (isKeramik) ketahanan = "Tahan panas ringan, hindari benturan keras";
-    else if (isTekstil) ketahanan = "Warna tahan luntur dengan perawatan sesuai label";
-    else ketahanan = "Dirancang untuk pemakaian harian dengan perawatan rutin";
-  }
-
-  let deskripsi = product.desc?.trim();
-  if (isWeakDetailText(deskripsi)) {
-    deskripsi =
-      `${product.nama_produk} adalah produk unggulan UMKM yang diproduksi secara teliti oleh pengrajin lokal. ` +
-      "Setiap unit melalui pengecekan kualitas sebelum dikirim. Dengan membeli produk ini, Anda turut mendukung ekonomi kreatif dan pelestarian kerajinan Indonesia.";
-  }
-  const extra = product.info_tambahan?.trim();
-  if (!isWeakDetailText(extra) && extra && !deskripsi.includes(extra)) {
-    deskripsi = `${deskripsi}\n\n${extra}`;
-  }
-
-  return { bahan, asal, berat, ketahanan, deskripsi };
+function getProductDescription(product: Product): string {
+  const desc = product.desc?.trim();
+  if (desc) return desc;
+  return `${product.nama_produk} adalah produk UMKM dari Pelataran UMKM. Setiap pembelian mendukung pengrajin dan pelaku usaha lokal Indonesia.`;
 }
 
 export default function ProductDetailPage() {
@@ -175,13 +103,17 @@ export default function ProductDetailPage() {
   const [soldCount, setSoldCount] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
+
     async function loadProduct() {
       if (!slug) {
         setLoading(false);
         return;
       }
       try {
-        const found = await productService.getProductBySlugOrId(slug);
+        const found = await productService.getProductBySlugOrId(slug, { includeImages: false });
+        if (cancelled) return;
+
         if (found) {
           const mapped: Product = {
             id_produk: found.id_produk,
@@ -204,6 +136,7 @@ export default function ProductDetailPage() {
             ketahanan: found.ketahanan,
             info_tambahan: found.info_tambahan,
             variants: found.variants,
+            variantInventory: found.variantInventory,
           };
           setProduct(mapped);
           setActiveImg(0);
@@ -212,34 +145,53 @@ export default function ProductDetailPage() {
           if (rawSeller) setSeller(rawSeller as Seller);
           else setSeller(null);
 
+          setLoading(false);
+
+          const productId = found.id_produk;
+          const kat = Array.isArray(found.kategori) ? found.kategori[0] : found.kategori;
+
+          productService.hydrateProductDetailImages(productId).then((resolved) => {
+            if (cancelled || !resolved) return;
+            setProduct((prev) => {
+              if (!prev || prev.id_produk !== productId) return prev;
+              return { ...prev, img: resolved.cover, images: resolved.images };
+            });
+          });
+
           const [reviewList, similar] = await Promise.all([
-            productService.getProductReviews(found.id_produk),
-            productService.getSimilarProducts(
-              found.id_produk,
-              found.categorySlug,
-              found.id_seller,
-              5
-            ),
+            productService.getProductReviews(productId),
+            productService.getSimilarProducts(productId, {
+              id_kategori: kat?.id_kategori as string | undefined,
+              sellerId: found.id_seller,
+              categorySlug: found.categorySlug,
+              limit: 5,
+            }),
           ]);
+          if (cancelled) return;
+
           setReviews(reviewList);
           const stats = await productService.getProductStats([
-            found.id_produk,
+            productId,
             ...similar.map((p) => p.id_produk),
           ]);
-          setSoldCount(stats[found.id_produk]?.sold ?? 0);
+          if (cancelled) return;
+
+          setSoldCount(stats[productId]?.sold ?? 0);
           setSimilarProducts(similar.map((p) => productToCard(p, stats[p.id_produk])));
 
           const user = authService.getCurrentUser();
-          const isPlaceholder =
+          const isPlaceholderEnv =
             !process.env.NEXT_PUBLIC_SUPABASE_URL ||
             process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder");
-          if (user && !isPlaceholder) {
+          if (user && !isPlaceholderEnv) {
             const { data: orderItems } = await supabase
               .from("order_item")
               .select(`id_order, order!inner ( id_order, id_user, stat_order )`)
-              .eq("id_produk", found.id_produk)
+              .eq("id_produk", productId)
               .eq("order.id_user", user.id_user)
               .eq("order.stat_order", "selesai");
+
+            if (cancelled) return;
 
             const selesaiOrder = orderItems?.[0]?.order;
             const orderId = Array.isArray(selesaiOrder)
@@ -247,21 +199,27 @@ export default function ProductDetailPage() {
               : (selesaiOrder as unknown as { id_order?: string } | null)?.id_order;
 
             if (orderId) {
-              const reviewed = await returnService.getReviewedProductIds(user.id_user, [found.id_produk]);
-              const already = reviewed.includes(found.id_produk);
+              const reviewed = await returnService.getReviewedProductIds(user.id_user, [productId]);
+              if (cancelled) return;
+              const already = reviewed.includes(productId);
               setHasReviewed(already);
               setCanReview(!already);
               setReviewOrderId(orderId);
             }
           }
+        } else {
+          setLoading(false);
         }
       } catch (err) {
         console.error("Error loading product:", err);
-      } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
+
     loadProduct();
+    return () => {
+      cancelled = true;
+    };
   }, [slug]);
 
   useEffect(() => {
@@ -284,6 +242,7 @@ export default function ProductDetailPage() {
     setAddingCart(true);
     const result = await cartService.addToCart(user.id_user, product.id_produk, qty, {
       setQty: redirectToCheckout,
+      variantPicks: getActiveVariantPicks(product, activeVariants),
     });
     if (!result.ok) {
       setAddingCart(false);
@@ -353,7 +312,27 @@ export default function ProductDetailPage() {
       ? (reviews.reduce((sum, r) => sum + r.rating, 0) / totalReviews).toFixed(1)
       : "0";
 
-  const productInfo = product ? buildProductInfoDisplay(product) : null;
+  const productDescription = product ? getProductDescription(product) : "";
+  const galleryImages = product ? getGalleryImages(product, activeVariants) : [];
+  const selectedStock = product ? getSelectedVariantStock(product, activeVariants) : 0;
+  const displayPrice =
+    product && product.variants?.length
+      ? hasSelectedVariantPrice(product, activeVariants)
+        ? formatPrice(getSelectedVariantPrice(product, activeVariants))
+        : formatVariantPriceRange(product, formatPrice)
+      : product
+        ? formatPrice(product.harga)
+        : "Rp 125.000";
+
+  const handleVariantSelect = (groupIndex: number, optionIndex: number) => {
+    const next = { ...activeVariants, [groupIndex]: optionIndex };
+    setActiveVariants(next);
+    setActiveImg(0);
+    if (product) {
+      const stock = getSelectedVariantStock(product, next);
+      setQty((q) => Math.max(1, Math.min(q, stock > 0 ? stock : 1)));
+    }
+  };
 
   if (loading) {
     return (
@@ -390,11 +369,11 @@ export default function ProductDetailPage() {
       <SearchBar />
 
       {/* Main content area */}
-      <main style={{ background: "#FCFCFA", minHeight: "60vh", paddingBottom: 60 }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 24px" }}>
+      <main className="pd-main">
+        <div className="pd-container">
 
           {/* ── Breadcrumb ── */}
-          <nav style={{ display: "flex", alignItems: "center", gap: 6, padding: "16px 0 20px", fontSize: "0.8rem", color: "#8E8680" }}>
+          <nav className="pd-breadcrumb">
             <Link href="/" style={{ color: "#8E8680", textDecoration: "none" }}>Beranda</Link>
             <ChevronRight size={13} />
             <Link href={`/kategori/${product ? product.category.toLowerCase() : "kerajinan"}`} style={{ color: "#8E8680", textDecoration: "none" }}>
@@ -407,33 +386,16 @@ export default function ProductDetailPage() {
           </nav>
 
           {/* ── Main Product Card ── */}
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "420px 1fr",
-            gap: 32,
-            background: "white",
-            border: "1px solid #EAE5E0",
-            borderRadius: 12,
-            padding: 28,
-            marginBottom: 24,
-          }}>
+          <div className="pd-top-grid">
 
             {/* Left: Image Gallery */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div className="pd-images">
               {/* Main Image */}
-              <div style={{
-                position: "relative",
-                width: "100%",
-                aspectRatio: "1",
-                borderRadius: 10,
-                overflow: "hidden",
-                background: "#F8F6F4",
-                border: "1px solid #EAE5E0",
-              }}>
+              <div className="pd-main-img">
                 <img
                   src={
                     product
-                      ? (product.images && product.images[activeImg] ? product.images[activeImg] : product.img)
+                      ? galleryImages[activeImg] || galleryImages[0] || product.img
                       : THUMBNAILS[activeImg]
                   }
                   alt={product ? product.nama_produk : "Mangkuk Keramik Motif Batik"}
@@ -442,49 +404,27 @@ export default function ProductDetailPage() {
               </div>
 
               {/* Thumbnails */}
-              {product && product.images && product.images.length > 0 ? (
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {product.images.map((src, i) => (
+              {product && galleryImages.length > 0 ? (
+                <div className="pd-thumbnails">
+                  {galleryImages.map((src, i) => (
                     <button
                       key={i}
                       onClick={() => setActiveImg(i)}
-                      style={{
-                        position: "relative",
-                        width: 72,
-                        height: 72,
-                        borderRadius: 8,
-                        overflow: "hidden",
-                        border: activeImg === i ? "2px solid #1D4ED8" : "2px solid transparent",
-                        cursor: "pointer",
-                        background: "#F8F6F4",
-                        padding: 0,
-                        flexShrink: 0,
-                        transition: "border-color 0.15s",
-                      }}
+                      className={`pd-thumb${activeImg === i ? " active" : ""}`}
+                      type="button"
                     >
                       <img src={src} alt={`Foto ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                     </button>
                   ))}
                 </div>
               ) : !product ? (
-                <div style={{ display: "flex", gap: 8 }}>
+                <div className="pd-thumbnails">
                   {THUMBNAILS.map((src, i) => (
                     <button
                       key={i}
                       onClick={() => setActiveImg(i)}
-                      style={{
-                        position: "relative",
-                        width: 72,
-                        height: 72,
-                        borderRadius: 8,
-                        overflow: "hidden",
-                        border: activeImg === i ? "2px solid #1D4ED8" : "2px solid transparent",
-                        cursor: "pointer",
-                        background: "#F8F6F4",
-                        padding: 0,
-                        flexShrink: 0,
-                        transition: "border-color 0.15s",
-                      }}
+                      className={`pd-thumb${activeImg === i ? " active" : ""}`}
+                      type="button"
                     >
                       <img src={src} alt={`Foto ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                     </button>
@@ -494,52 +434,36 @@ export default function ProductDetailPage() {
             </div>
 
             {/* Right: Product Info */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div className="pd-info">
               {/* Badge */}
-              <span style={{
-                display: "inline-block",
-                background: "#1D4ED8",
-                color: "white",
-                fontSize: "0.65rem",
-                fontWeight: 800,
-                padding: "4px 10px",
-                borderRadius: 3,
-                letterSpacing: "0.05em",
-                width: "fit-content",
-              }}>{product ? product.category.toUpperCase() : "PRODUK UNGGULAN"}</span>
+              <span className="pd-badge-unggulan">{product ? product.category.toUpperCase() : "PRODUK UNGGULAN"}</span>
 
               {/* Product Name */}
-              <h1 style={{ fontSize: "1.625rem", fontWeight: 800, color: "#1F1B18", lineHeight: 1.25, letterSpacing: "-0.02em", margin: 0 }}>
+              <h1 className="pd-product-name">
                 {product ? product.nama_produk : "Mangkuk Keramik Motif Batik"}
               </h1>
 
               {/* Rating Row */}
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ display: "flex", gap: 2 }}>
+              <div className="pd-rating-row">
+                <div className="pd-stars">
                   {[1,2,3,4,5].map(i => (
                     <Star key={i} size={14} fill={Number(averageRating) >= i ? "#F59E0B" : "none"} color={Number(averageRating) >= i ? "#F59E0B" : "#D5CFC9"} />
                   ))}
                 </div>
-                <span style={{ fontSize: "0.8125rem", color: "#5C5550", fontWeight: 600 }}>{averageRating} | {totalReviews} Ulasan</span>
-                <span style={{ fontSize: "0.8125rem", color: "#8E8680" }}>·</span>
-                <span style={{ fontSize: "0.8125rem", color: "#8E8680" }}>
-                  Stok: {product ? product.stok : 0}
+                <span className="pd-rating-text">{averageRating} | {totalReviews} Ulasan</span>
+                <span className="pd-divider-dot">·</span>
+                <span className="pd-sold-text">
+                  Stok: {selectedStock}
                 </span>
-                <span style={{ fontSize: "0.8125rem", color: "#8E8680" }}>·</span>
-                <span style={{ fontSize: "0.8125rem", color: "#8E8680" }}>
+                <span className="pd-divider-dot">·</span>
+                <span className="pd-sold-text">
                   Terjual {soldCount}
                 </span>
               </div>
 
               {/* Price */}
-              <div style={{ fontSize: "1.875rem", fontWeight: 800, color: "#1D4ED8", letterSpacing: "-0.02em" }}>
-                {product?.variants?.some((g) => g.options.some((o) => o.price)) &&
-                Object.keys(activeVariants).length > 0 &&
-                getSelectedVariantPrice(product, activeVariants) !== product.harga
-                  ? formatPrice(getSelectedVariantPrice(product, activeVariants))
-                  : product
-                    ? getVariantPriceRange(product)
-                    : "Rp 125.000"}
+              <div className="pd-price">
+                {displayPrice}
               </div>
 
               {product?.variants && product.variants.length > 0 && getSelectedVariantLabel(product, activeVariants) && (
@@ -553,54 +477,78 @@ export default function ProductDetailPage() {
 
               {/* Varian ala marketplace */}
               {product?.variants && product.variants.length > 0 ? (
-                product.variants.map((v, vIdx) => (
+                product.variants.map((v, vIdx) => {
+                  const isVisual = isVisualVariantGroup(product, vIdx);
+                  return (
                   <div key={vIdx} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    <p style={{ fontSize: "0.8125rem", fontWeight: 700, color: "#5C5550", margin: 0 }}>{v.label}</p>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    <p style={{ fontSize: "0.8125rem", fontWeight: 700, color: "#5C5550", margin: 0, textTransform: "uppercase" }}>
+                      {v.label}
+                    </p>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 8,
+                        maxHeight: isVisual && v.options.length > 6 ? 220 : undefined,
+                        overflowY: isVisual && v.options.length > 6 ? "auto" : undefined,
+                        paddingRight: isVisual && v.options.length > 6 ? 4 : 0,
+                      }}
+                    >
                       {v.options.map((opt, optIdx) => {
                         const isSelected = (activeVariants[vIdx] ?? 0) === optIdx;
+                        const showThumb = Boolean(opt.image?.trim());
                         return (
                           <button
                             key={optIdx}
                             type="button"
-                            onClick={() => setActiveVariants((prev) => ({ ...prev, [vIdx]: optIdx }))}
+                            onClick={() => handleVariantSelect(vIdx, optIdx)}
                             style={{
                               display: "flex",
+                              flexDirection: showThumb ? "column" : "row",
                               alignItems: "center",
-                              gap: 8,
-                              minHeight: 40,
-                              padding: opt.image ? "4px 12px 4px 4px" : "0 14px",
+                              justifyContent: showThumb ? "flex-start" : "center",
+                              gap: showThumb ? 4 : 8,
+                              minHeight: showThumb ? 88 : 40,
+                              width: showThumb ? 72 : undefined,
+                              padding: showThumb ? "6px 6px 8px" : "0 14px",
                               borderRadius: 4,
                               border: isSelected ? "1.5px solid #1D4ED8" : "1px solid #D5CFC9",
-                              fontSize: "0.8125rem",
+                              fontSize: showThumb ? "0.625rem" : "0.8125rem",
                               fontWeight: 600,
                               color: isSelected ? "#1D4ED8" : "#1F1B18",
-                              background: isSelected ? "#FFF7ED" : "white",
+                              background: isSelected ? "#EFF6FF" : "white",
                               cursor: "pointer",
                               transition: "all 0.15s",
                               fontFamily: "inherit",
+                              textAlign: "center",
                             }}
                           >
-                            {opt.image ? (
+                            {showThumb ? (
                               <img
                                 src={opt.image}
                                 alt={opt.name}
                                 style={{
-                                  width: 32,
-                                  height: 32,
+                                  width: 56,
+                                  height: 56,
                                   objectFit: "cover",
                                   borderRadius: 2,
                                   flexShrink: 0,
                                 }}
                               />
                             ) : null}
-                            <span>{opt.name}</span>
+                            <span style={{ lineHeight: 1.2, wordBreak: "break-word" }}>{opt.name}</span>
+                            {!showThumb && opt.price != null && opt.price > 0 ? (
+                              <span style={{ fontSize: "0.6875rem", color: "#8E8680", fontWeight: 500 }}>
+                                {formatPrice(opt.price)}
+                              </span>
+                            ) : null}
                           </button>
                         );
                       })}
                     </div>
                   </div>
-                ))
+                  );
+                })
               ) : !product ? (
                 <>
                   {/* Color Picker */}
@@ -679,7 +627,7 @@ export default function ProductDetailPage() {
                     <span style={{ width: 40, textAlign: "center", fontSize: "0.875rem", fontWeight: 700 }}>{qty}</span>
                     <button
                       type="button"
-                      onClick={() => setQty((q) => Math.min(product.stok || 99, q + 1))}
+                      onClick={() => setQty((q) => Math.min(selectedStock || 99, q + 1))}
                       style={{
                         width: 32,
                         height: 32,
@@ -693,77 +641,50 @@ export default function ProductDetailPage() {
                       +
                     </button>
                   </div>
-                  <span style={{ fontSize: "0.75rem", color: product.stok > 0 ? "#16A34A" : "#DC2626", fontWeight: 600 }}>
-                    {product.stok > 0 ? `Stok tersedia: ${product.stok} unit` : "Stok habis"}
+                  <span style={{ fontSize: "0.75rem", color: selectedStock > 0 ? "#16A34A" : "#DC2626", fontWeight: 600 }}>
+                    {selectedStock > 0 ? `Stok tersedia: ${selectedStock} unit` : "Stok habis untuk varian ini"}
                   </span>
                 </div>
               )}
 
               {/* CTA Buttons */}
-              <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
+              <div className="pd-cta-row">
                 <button
                   type="button"
                   onClick={openCustomerService}
-                  style={{
-                    width: 48,
-                    height: 48,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    border: "2px solid #D5CFC9",
-                    borderRadius: 8,
-                    color: "#5C5550",
-                    background: "white",
-                    cursor: "pointer",
-                    transition: "all 0.15s",
-                  }}
-                  title="Customer Service"
+                  className="pd-btn-chat"
+                  title="Chat dengan Admin"
                 >
-                  <MessageSquare size={20} />
+                  <MessageSquare size={20} strokeWidth={2.25} />
+                  <span className="pd-btn-chat-label pd-btn-chat-label--desktop">
+                    Chat
+                    <br />
+                    dengan Admin
+                  </span>
+                  <span className="pd-btn-chat-label pd-btn-chat-label--mobile">Chat</span>
                 </button>
                 <button
                   id="add-to-cart"
                   onClick={() => handleAddToCart(false)}
                   disabled={addingCart}
-                  style={{
-                    flex: 1,
-                    height: 48,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 10,
-                    border: "2px solid #1D4ED8",
-                    borderRadius: 8,
-                    color: "#1D4ED8",
-                    fontSize: "0.9rem",
-                    fontWeight: 700,
-                    background: "white",
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                  }}
+                  className="pd-btn-cart"
+                  type="button"
                 >
-                  <ShoppingCart size={18} />
-                  {addingCart ? "Menambahkan..." : "Tambah ke Keranjang"}
+                  <ShoppingCart size={18} className="pd-btn-icon" />
+                  <span className="pd-btn-label pd-btn-label--full">
+                    {addingCart ? "Menambahkan..." : "Tambah ke Keranjang"}
+                  </span>
+                  <span className="pd-btn-label pd-btn-label--short">
+                    {addingCart ? "..." : "Keranjang"}
+                  </span>
                 </button>
                 <button
                   id="buy-now"
                   onClick={() => handleAddToCart(true)}
                   disabled={addingCart}
-                  style={{
-                    flex: 1,
-                    height: 48,
-                    background: "#1D4ED8",
-                    color: "white",
-                    borderRadius: 8,
-                    fontSize: "0.9rem",
-                    fontWeight: 700,
-                    cursor: addingCart ? "not-allowed" : "pointer",
-                    border: "none",
-                    fontFamily: "inherit",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
+                  className="pd-btn-buy"
+                  type="button"
+                  style={{ cursor: addingCart ? "not-allowed" : "pointer" }}
                 >
                   Beli Sekarang
                 </button>
@@ -772,36 +693,17 @@ export default function ProductDetailPage() {
           </div>
 
           {/* ── Info + Seller Grid ── */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 24, marginBottom: 40, alignItems: "start" }}>
+          <div className="pd-bottom-grid">
 
             {/* Left Column */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            <div className="pd-left-col">
 
-              {/* Product Info Card */}
+              {/* Deskripsi Produk */}
               <div style={{ background: "white", border: "1px solid #EAE5E0", borderRadius: 12, padding: 24 }}>
-                <h2 style={{ fontSize: "1.05rem", fontWeight: 800, color: "#1F1B18", marginBottom: 16, margin: "0 0 16px 0" }}>Informasi Produk</h2>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "120px 1fr 140px 1fr", gap: 8, fontSize: "0.8125rem" }}>
-                    <span style={{ color: "#8E8680", fontWeight: 600 }}>Bahan</span>
-                    <span style={{ color: "#1F1B18", fontWeight: 600 }}>{productInfo?.bahan ?? "—"}</span>
-                    <span style={{ color: "#8E8680", fontWeight: 600 }}>Asal Produk</span>
-                    <span style={{ color: "#1F1B18", fontWeight: 600 }}>{productInfo?.asal ?? "—"}</span>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "120px 1fr 140px 1fr", gap: 8, fontSize: "0.8125rem" }}>
-                    <span style={{ color: "#8E8680", fontWeight: 600 }}>Berat</span>
-                    <span style={{ color: "#1F1B18", fontWeight: 600 }}>{productInfo?.berat ?? "—"}</span>
-                    <span style={{ color: "#8E8680", fontWeight: 600 }}>Ketahanan</span>
-                    <span style={{ color: "#1F1B18", fontWeight: 600 }}>{productInfo?.ketahanan ?? "—"}</span>
-                  </div>
-                </div>
-                <div style={{ paddingTop: 12, borderTop: "1px solid #EAE5E0" }}>
-                  <p style={{ fontSize: "0.75rem", fontWeight: 800, color: "#8E8680", textTransform: "uppercase", letterSpacing: "0.04em", margin: "0 0 8px" }}>
-                    Deskripsi
-                  </p>
-                  <p style={{ fontSize: "0.8125rem", color: "#5C5550", lineHeight: 1.65, margin: 0, whiteSpace: "pre-line" }}>
-                    {productInfo?.deskripsi ?? "—"}
-                  </p>
-                </div>
+                <h2 style={{ fontSize: "1.05rem", fontWeight: 800, color: "#1F1B18", margin: "0 0 12px 0" }}>Deskripsi Produk</h2>
+                <p style={{ fontSize: "0.8125rem", color: "#5C5550", lineHeight: 1.65, margin: 0, whiteSpace: "pre-line" }}>
+                  {productDescription || "—"}
+                </p>
               </div>
 
               {/* Review Form — hanya jika pesanan selesai & belum diulas */}
@@ -998,7 +900,7 @@ export default function ProductDetailPage() {
             </div>
 
             {/* Right Column */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div className="pd-right-col">
 
               {/* Seller Card */}
               <div style={{ background: "white", border: "1px solid #EAE5E0", borderRadius: 12, padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
@@ -1036,7 +938,7 @@ export default function ProductDetailPage() {
                 )}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10 }}>
                   <Link
-                    href={seller?.nm_store ? `/toko/${storeNameToSlug(seller.nm_store)}` : "#"}
+                    href={seller?.id_seller ? `/toko/${seller.id_seller}` : "#"}
                     style={{
                       display: "flex",
                       alignItems: "center",
@@ -1077,50 +979,29 @@ export default function ProductDetailPage() {
           </div>
 
           {/* ── Similar Products ── */}
-          <div style={{ marginTop: 8 }}>
-            <h2 style={{ fontSize: "1.05rem", fontWeight: 800, color: "#1F1B18", marginBottom: 20 }}>Produk Serupa</h2>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 16 }}>
+          <div className="pd-similar-section">
+            <h2 className="pd-section-title">Produk Serupa</h2>
+            <div className="pd-similar-grid">
               {similarProducts.length === 0 ? (
                 <p style={{ fontSize: "0.875rem", color: "#8E8680", gridColumn: "1 / -1" }}>Belum ada produk serupa.</p>
               ) : similarProducts.map((p) => (
                 <Link
                   key={p.id}
                   href={`/produk/${p.slug}`}
-                  style={{
-                    background: "white",
-                    border: "1px solid #EAE5E0",
-                    borderRadius: 12,
-                    overflow: "hidden",
-                    textDecoration: "none",
-                    display: "flex",
-                    flexDirection: "column",
-                    transition: "transform 0.2s, box-shadow 0.2s",
-                  }}
+                  className="pd-similar-card"
                 >
-                  <div style={{ position: "relative", aspectRatio: "1", background: "#F8F6F4" }}>
+                  <div className="pd-similar-img">
                     <Image src={p.image} alt={p.name} fill style={{ objectFit: "cover" }} />
                   </div>
-                  <div style={{ padding: 12 }}>
-                    <h3 style={{
-                      fontSize: "0.8125rem",
-                      fontWeight: 700,
-                      color: "#1F1B18",
-                      lineHeight: 1.35,
-                      marginBottom: 6,
-                      margin: "0 0 6px 0",
-                      display: "-webkit-box",
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: "vertical",
-                      overflow: "hidden",
-                      minHeight: "2.7em",
-                    }}>{p.name}</h3>
-                    <p style={{ fontSize: "0.9375rem", fontWeight: 800, color: "#1D4ED8", marginBottom: 6, margin: "0 0 6px 0" }}>
+                  <div className="pd-similar-info">
+                    <h3 className="pd-similar-name">{p.name}</h3>
+                    <p className="pd-similar-price">
                       {formatPrice(p.price)}
                     </p>
-                    <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.7rem", color: "#8E8680" }}>
-                      <span style={{ color: "#1D4ED8", fontSize: "0.8rem" }}>★</span>
+                    <div className="pd-similar-meta">
+                      <span className="pd-similar-star">★</span>
                       <span>{p.rating}</span>
-                      <span style={{ color: "#D5CFC9" }}>·</span>
+                      <span className="pd-similar-sep">·</span>
                       <span>{p.sold} terjual</span>
                     </div>
                   </div>

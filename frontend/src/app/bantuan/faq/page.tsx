@@ -11,7 +11,7 @@ const FAQ_DATA = [
     items: [
       { q: "Bagaimana cara mendaftar akun di Pelataran UMKM?", a: "Klik tombol 'Daftar' di sudut kanan atas, isi nama lengkap, email, dan kata sandi. Verifikasi email kamu, dan akun siap digunakan dalam hitungan menit." },
       { q: "Apakah pendaftaran gratis?", a: "Ya, pendaftaran sepenuhnya gratis untuk semua pengguna, baik pembeli maupun penjual. Kami hanya mengenakan biaya layanan kecil untuk setiap transaksi yang berhasil." },
-      { q: "Bagaimana cara upgrade akun menjadi seller?", a: "Login ke akun kamu, buka menu Akun → Seller, lalu lengkapi data toko: nama toko, deskripsi, foto KTP, dan rekening bank. Tim kami akan memverifikasi dalam 1–2 hari kerja." },
+      { q: "Bagaimana UMKM bergabung sebagai mitra konsinyasi?", a: "UMKM tidak mendaftar sendiri lewat website. Hubungi tim Pelataran UMKM via halaman Kontak atau Customer Service. Setelah kerja sama disepakati, admin mendaftarkan toko dan produk di platform." },
       { q: "Saya lupa kata sandi, apa yang harus dilakukan?", a: "Klik 'Lupa Password?' di halaman login, masukkan email terdaftar, dan kami akan kirimkan link reset kata sandi yang berlaku 30 menit." },
     ],
   },
@@ -45,7 +45,7 @@ const FAQ_DATA = [
     ],
   },
   {
-    category: "Untuk Seller",
+    category: "Untuk Mitra UMKM",
     icon: <Store size={16} />,
     items: [
       { q: "Berapa biaya jual di Pelataran UMKM?", a: "Pendaftaran toko gratis. Biaya layanan 2.5% per transaksi berhasil (lebih rendah dari marketplace lain). Tidak ada biaya listing produk." },

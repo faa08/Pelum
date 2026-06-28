@@ -1,8 +1,10 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { authService } from "@/backend/authService";
+import { addressService } from "@/backend/addressService";
 import { supabase } from "@/backend/supabase";
+import AddressMapPicker, { type AddressFromMap } from "@/components/AddressMapPicker";
 
 type Alamat = {
   id_alamat: string;
@@ -48,13 +50,8 @@ export default function CustomerAddressPage() {
     if (!user) { setLoading(false); return; }
     if (isPlaceholder()) { setLoading(false); return; }
 
-    const { data, error } = await supabase
-      .from("alamat")
-      .select("*")
-      .eq("id_user", user.id_user)
-      .order("is_utama", { ascending: false });
-
-    if (!error && data) setAddresses(data as Alamat[]);
+    const data = await addressService.getAddresses(user.id_user);
+    setAddresses(data);
     setLoading(false);
   };
 
@@ -104,13 +101,11 @@ export default function CustomerAddressPage() {
     }
 
     if (editingId) {
-      await supabase.from("alamat").update(form).eq("id_alamat", editingId);
+      const ok = await addressService.updateAddress(editingId, user.id_user, form);
+      if (!ok) alert("Gagal menyimpan alamat. Coba lagi.");
     } else {
-      await supabase.from("alamat").insert({
-        ...form,
-        id_user: user.id_user,
-        is_utama: addresses.length === 0,
-      });
+      const created = await addressService.createAddress(user.id_user, form);
+      if (!created) alert("Gagal menambahkan alamat. Coba lagi.");
     }
 
     await fetchAddresses();
@@ -143,6 +138,17 @@ export default function CustomerAddressPage() {
   const setField = (key: keyof FormState, value: string) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
+  const handleMapPick = useCallback((picked: AddressFromMap) => {
+    setForm((prev) => ({
+      ...prev,
+      provinsi: picked.provinsi,
+      kota: picked.kota,
+      kecamatan: picked.kecamatan,
+      kode_pos: picked.kode_pos,
+      detail_alamat: picked.detail_alamat,
+    }));
+  }, []);
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -169,6 +175,8 @@ export default function CustomerAddressPage() {
             {editingId ? "Ubah Alamat" : "Tambah Alamat Baru"}
           </h3>
           <form onSubmit={handleSave} className="space-y-4">
+            <AddressMapPicker onPick={handleMapPick} />
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
               {/* Label */}
               <div className="space-y-1">

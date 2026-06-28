@@ -203,11 +203,19 @@
 }
 
 .cs-msg-time {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
   font-size: 0.625rem;
   opacity: 0.65;
   margin-top: 4px;
-  text-align: right;
+}
+
+.cs-msg-receipt {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
 }
 
 .cs-msg-bubble--typing {

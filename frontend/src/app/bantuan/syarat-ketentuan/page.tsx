@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { ChevronRight, FileText } from "lucide-react";
+import { CONTACT_EMAIL, CONTACT_EMAIL_MAILTO } from "@/lib/siteContact";
 
 const SECTIONS = [
   { id: "ketentuan-umum", title: "1. Ketentuan Umum", content: `Dengan mengakses dan menggunakan platform Pelataran UMKM ("Platform"), Anda menyatakan telah membaca, memahami, dan menyetujui seluruh syarat dan ketentuan yang berlaku.\n\nPlatform ini dioperasikan oleh PT Pelataran Digital Nusantara dan ditujukan untuk mempertemukan pelaku UMKM Indonesia dengan pembeli di seluruh wilayah Indonesia.\n\nPelataran UMKM berhak mengubah, menambah, atau menghapus syarat dan ketentuan ini sewaktu-waktu. Perubahan akan berlaku efektif sejak dipublikasikan di Platform.` },
@@ -59,7 +60,7 @@ export default function SyaratKetentuanPage() {
               </section>
             ))}
             <div className="bg-primary-container border border-[#BFDBFE] rounded-xl p-6">
-              <p className="text-sm text-primary font-semibold leading-relaxed">Dengan menggunakan Pelataran UMKM, kamu menyetujui seluruh syarat dan ketentuan di atas. Pertanyaan? Hubungi <a href="mailto:support@pelataranumkm.id" className="font-bold underline">support@pelataranumkm.id</a>.</p>
+              <p className="text-sm text-primary font-semibold leading-relaxed">Dengan menggunakan Pelataran UMKM, kamu menyetujui seluruh syarat dan ketentuan di atas. Pertanyaan? Hubungi <a href={CONTACT_EMAIL_MAILTO} className="font-bold underline">{CONTACT_EMAIL}</a> atau Chat Admin.</p>
             </div>
           </article>
         </div>

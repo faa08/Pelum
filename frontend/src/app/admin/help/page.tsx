@@ -134,11 +134,11 @@ export default function AdminHelpPage() {
             <div className="space-y-2 pt-2">
               <div className="flex items-center gap-3 text-xs">
                 <span className="material-symbols-outlined text-primary text-lg">mail</span>
-                <span className="font-semibold text-on-surface">dev-support@pelataranumkm.id</span>
+                <span className="font-semibold text-on-surface">linkproductive@gmail.com</span>
               </div>
               <div className="flex items-center gap-3 text-xs">
-                <span className="material-symbols-outlined text-primary text-lg">call</span>
-                <span className="font-semibold text-on-surface">+62 812-3456-7890 (WA)</span>
+                <span className="material-symbols-outlined text-primary text-lg">support_agent</span>
+                <span className="font-semibold text-on-surface">Chat Admin (widget CS di pojok kanan bawah)</span>
               </div>
               <div className="flex items-center gap-3 text-xs">
                 <span className="material-symbols-outlined text-primary text-lg">schedule</span>

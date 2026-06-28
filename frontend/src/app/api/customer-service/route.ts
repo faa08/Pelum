@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextRequest, NextResponse } from "next/server";
+import { requireAuth } from "@/lib/api-auth";
 import { CUSTOMER_SERVICE_SYSTEM_PROMPT } from "@/data/customerServiceKnowledge";
 
 interface ChatMessage {
@@ -22,6 +23,9 @@ function mapGeminiError(err: unknown): string {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
   try {
     const apiKey = process.env.GEMINI_API_KEY?.trim();
     if (!apiKey) {

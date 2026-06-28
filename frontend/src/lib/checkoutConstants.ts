@@ -1,9 +1,17 @@
 export const PICKUP_STORE_ADDRESS =
   "Ruko BBS, Jl. Bukit Baja Sejahtera No.9 Blok B3, Ciwaduk, Kec. Cilegon, Kota Cilegon, Banten 42415";
 
+export const PICKUP_STORE_MAPS_URL = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(PICKUP_STORE_ADDRESS)}`;
+
 export const PICKUP_CONFIRM_SECONDS = 10;
 
 export type CheckoutPaymentType = "digital" | "offline";
+
+/** True jika kunci Midtrans client sudah diset (sandbox atau production). */
+export function isDigitalPaymentConfigured(): boolean {
+  const key = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY?.trim();
+  return Boolean(key && !key.includes("your-"));
+}
 
 export const CHECKOUT_PAYMENT_OPTIONS: {
   id: CheckoutPaymentType;
@@ -13,7 +21,7 @@ export const CHECKOUT_PAYMENT_OPTIONS: {
   {
     id: "digital",
     name: "Bayar Digital",
-    desc: "Midtrans — VA, e-wallet, QRIS, kartu kredit",
+    desc: "VA, e-wallet, QRIS, kartu kredit via Midtrans",
   },
   {
     id: "offline",
@@ -21,6 +29,17 @@ export const CHECKOUT_PAYMENT_OPTIONS: {
     desc: "Bayar di tempat & ambil sendiri di lokasi kami",
   },
 ];
+
+export function getAvailablePaymentOptions() {
+  if (isDigitalPaymentConfigured()) {
+    return CHECKOUT_PAYMENT_OPTIONS;
+  }
+  return CHECKOUT_PAYMENT_OPTIONS.filter((o) => o.id === "offline");
+}
+
+export const DEFAULT_PAYMENT_TYPE: CheckoutPaymentType = isDigitalPaymentConfigured()
+  ? "digital"
+  : "offline";
 
 export type OrderPaymentKind = "pickup" | "digital";
 

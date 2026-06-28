@@ -19,10 +19,13 @@ import { authService } from "@/backend/authService";
 import { cartService } from "@/backend/cartService";
 import { orderService, CheckoutOrderResult, PaymentMethodId } from "@/backend/orderService";
 import { supabase } from "@/backend/supabase";
+import { apiFetch } from "@/lib/api-client";
 import {
-  CHECKOUT_PAYMENT_OPTIONS,
   PICKUP_CONFIRM_SECONDS,
   PICKUP_STORE_ADDRESS,
+  DEFAULT_PAYMENT_TYPE,
+  getAvailablePaymentOptions,
+  isDigitalPaymentConfigured,
 } from "@/lib/checkoutConstants";
 
 interface CheckoutItem {
@@ -58,9 +61,9 @@ export default function CheckoutPage() {
   const [addressId, setAddressId] = useState<string | null>(null);
   // Address State
   const [address, setAddress] = useState({
-    name: "Budi Santoso (Utama)",
-    phone: "6281234567890",
-    details: "Jl. Sudirman No. 123, Kebayoran Baru, Jakarta Selatan, DKI Jakarta, 12190",
+    name: "",
+    phone: "",
+    details: "",
   });
   const [isEditAddressOpen, setIsEditAddressOpen] = useState(false);
   const [tempAddress, setTempAddress] = useState({ ...address });
@@ -71,7 +74,7 @@ export default function CheckoutPage() {
   const [transactionRef, setTransactionRef] = useState("");
 
   // Payment State
-  const [selectedPaymentType, setSelectedPaymentType] = useState<PaymentMethodId>("digital");
+  const [selectedPaymentType, setSelectedPaymentType] = useState<PaymentMethodId>(DEFAULT_PAYMENT_TYPE);
   const [showPickupModal, setShowPickupModal] = useState(false);
   const [pickupCountdown, setPickupCountdown] = useState(PICKUP_CONFIRM_SECONDS);
   const [pickupCanConfirm, setPickupCanConfirm] = useState(false);
@@ -212,7 +215,7 @@ export default function CheckoutPage() {
     if (!user) return;
 
     const grossAmount = orders.reduce((s, o) => s + o.total_hrg, 0);
-    const snapRes = await fetch("/api/payment/midtrans-snap", {
+    const snapRes = await apiFetch("/api/payment/midtrans-snap", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -357,19 +360,14 @@ export default function CheckoutPage() {
     <>
       <Navbar />
 
-      <main style={{ background: "#FCFCFA", minHeight: "85vh", padding: "40px 0 60px" }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 24px" }}>
+      <main className="page-main-shell" style={{ background: "#FCFCFA", minHeight: "85vh" }}>
+        <div className="page-main-inner">
           <>
               <h1 style={{ fontSize: "1.75rem", fontWeight: 800, color: "#1F1B18", marginBottom: 24 }}>
                 Checkout
               </h1>
 
-              <div style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 380px",
-                gap: 28,
-                alignItems: "start",
-              }}>
+              <div className="checkout-grid">
 
                 {/* LEFT COLUMN */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -510,8 +508,22 @@ export default function CheckoutPage() {
                     <h3 style={{ fontSize: "0.8125rem", fontWeight: 800, color: "#8E8680", letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: 16 }}>
                       Pilih Pembayaran
                     </h3>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                      {CHECKOUT_PAYMENT_OPTIONS.map((method) => {
+                    {!isDigitalPaymentConfigured() && (
+                      <p style={{
+                        fontSize: "0.75rem",
+                        color: "#92400E",
+                        background: "#FFFBEB",
+                        border: "1px solid #FDE68A",
+                        borderRadius: 8,
+                        padding: "10px 12px",
+                        marginBottom: 14,
+                        lineHeight: 1.5,
+                      }}>
+                        Pembayaran digital belum aktif. Gunakan <strong>Ambil di Toko</strong> untuk sementara.
+                      </p>
+                    )}
+                    <div className="payment-options-grid">
+                      {getAvailablePaymentOptions().map((method) => {
                         const isSelected = selectedPaymentType === method.id;
                         return (
                           <div
@@ -712,7 +724,11 @@ export default function CheckoutPage() {
                 </button>
 
                 <p style={{ fontSize: "0.725rem", color: "#8E8680", textAlign: "center", lineHeight: 1.4, marginTop: 12, margin: "12px 0 0" }}>
-                  Dengan membayar, Anda menyetujui <span style={{ color: "#1D4ED8", cursor: "pointer" }}>Syarat & Ketentuan</span> Pelataran UMKM.
+                  Dengan membayar, Anda menyetujui{" "}
+                  <Link href="/bantuan/syarat-ketentuan" style={{ color: "#1D4ED8", fontWeight: 600 }}>
+                    Syarat & Ketentuan
+                  </Link>{" "}
+                  Pelataran UMKM.
                 </p>
               </div>
 

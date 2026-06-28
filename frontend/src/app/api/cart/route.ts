@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdmin } from "@/lib/supabase-admin";
+import { requireAuth, denyForeignUser } from "@/lib/api-auth";import {
+  applyInventoryDeduction,
+  getStockForPicks,
+  parseVariantRaw,
+  picksEqual,
+} from "@/lib/variantInventory";
 
 type CartRow = {
   id_cart_item: string;
@@ -73,19 +79,15 @@ const CART_SELECT = `
 `;
 
 export async function GET(request: NextRequest) {
-  const userId = request.nextUrl.searchParams.get("userId");
-  if (!userId) {
-    return NextResponse.json({ error: "userId wajib." }, { status: 400 });
-  }
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
 
-  const { client: admin, error: configError } = createSupabaseAdmin();
-  if (!admin) {
-    return NextResponse.json(
-      { error: configError || "Database admin tidak dikonfigurasi." },
-      { status: 503 }
-    );
-  }
+  const queryUserId = request.nextUrl.searchParams.get("userId");
+  const denied = denyForeignUser(auth.ctx, queryUserId);
+  if (denied) return denied;
 
+  const userId = auth.ctx.user.id_user;
+  const admin = auth.ctx.admin;
   try {
     const cartId = await getOrCreateCartId(admin, userId);
     const { data, error } = await admin
@@ -107,33 +109,36 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const { client: admin, error: configError } = createSupabaseAdmin();
-  if (!admin) {
-    return NextResponse.json(
-      { error: configError || "Database admin tidak dikonfigurasi." },
-      { status: 503 }
-    );
-  }
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
+  const admin = auth.ctx.admin;
 
   try {
     const body = await request.json();
     const action = String(body.action || "");
-
+    const bodyUserId = body.userId ? String(body.userId) : null;
+    if (bodyUserId) {
+      const denied = denyForeignUser(auth.ctx, bodyUserId);
+      if (denied) return denied;
+    }
+    const userId = auth.ctx.user.id_user;
     if (action === "add") {
-      const userId = String(body.userId || "");
       const productId = String(body.productId || "");
       const qty = Math.max(1, Number(body.qty) || 1);
       const setQty = Boolean(body.setQty);
-      if (!userId || !productId) {
-        return NextResponse.json({ error: "userId dan productId wajib." }, { status: 400 });
+      const variantPicks = Array.isArray(body.variantPicks)
+        ? body.variantPicks.map((n: unknown) => Number(n)).filter((n: number) => !Number.isNaN(n))
+        : [];
+      if (!productId) {
+        return NextResponse.json({ error: "productId wajib." }, { status: 400 });
       }
 
       const { data: userRow, error: userErr } = await admin
         .from("users")
         .select("id_user")
         .eq("id_user", userId)
-        .maybeSingle();
-      if (userErr) throw userErr;
+        .maybeSingle();      if (userErr) throw userErr;
       if (!userRow) {
         return NextResponse.json(
           { error: "Akun tidak ditemukan. Silakan keluar lalu masuk kembali." },
@@ -143,32 +148,52 @@ export async function POST(request: NextRequest) {
 
       const { data: productRow, error: productErr } = await admin
         .from("produk")
-        .select("id_produk, produk_stock, stat_produk")
+        .select("id_produk, produk_stock, stat_produk, varian")
         .eq("id_produk", productId)
         .maybeSingle();
       if (productErr) throw productErr;
       if (!productRow) {
         return NextResponse.json({ error: "Produk tidak ditemukan." }, { status: 404 });
       }
-      if (Number(productRow.produk_stock) < qty) {
+
+      const { inventory } = parseVariantRaw(productRow.varian);
+      const availableStock = getStockForPicks(
+        inventory,
+        variantPicks,
+        Number(productRow.produk_stock)
+      );
+      if (availableStock < qty) {
         return NextResponse.json(
-          { error: `Stok tidak mencukupi (tersisa ${productRow.produk_stock}).` },
+          { error: `Stok tidak mencukupi (tersisa ${availableStock}).` },
           { status: 400 }
         );
       }
 
       const cartId = await getOrCreateCartId(admin, userId);
-      const { data: existing, error: findError } = await admin
+      const { data: existingItems, error: findError } = await admin
         .from("cart_item")
-        .select("id_cart_item, qty_cartitem")
+        .select("id_cart_item, qty_cartitem, pilihan_varian")
         .eq("id_cart", cartId)
-        .eq("id_produk", productId)
-        .maybeSingle();
+        .eq("id_produk", productId);
 
       if (findError) throw findError;
 
+      const existing = (existingItems || []).find((row) => {
+        const rowPicks = (row.pilihan_varian as { picks?: number[] } | null)?.picks;
+        return picksEqual(
+          rowPicks,
+          variantPicks.length > 0 ? variantPicks : null
+        );
+      });
+
       if (existing) {
         const newQty = setQty ? qty : existing.qty_cartitem + qty;
+        if (availableStock < newQty) {
+          return NextResponse.json(
+            { error: `Stok tidak mencukupi (tersisa ${availableStock}).` },
+            { status: 400 }
+          );
+        }
         const { error } = await admin
           .from("cart_item")
           .update({ qty_cartitem: newQty })
@@ -183,6 +208,7 @@ export async function POST(request: NextRequest) {
           id_cart: cartId,
           id_produk: productId,
           qty_cartitem: qty,
+          pilihan_varian: variantPicks.length > 0 ? { picks: variantPicks } : null,
         })
         .select("id_cart_item")
         .single();
@@ -198,8 +224,18 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "cartItemId wajib." }, { status: 400 });
       }
 
-      const { error } = await admin
+      const { data: owned } = await admin
         .from("cart_item")
+        .select("id_cart, cart!inner(id_user)")
+        .eq("id_cart_item", cartItemId)
+        .maybeSingle();
+      const cartOwner = (owned?.cart as { id_user?: string } | { id_user?: string }[] | null);
+      const ownerId = Array.isArray(cartOwner) ? cartOwner[0]?.id_user : cartOwner?.id_user;
+      if (ownerId !== userId) {
+        return NextResponse.json({ error: "Item keranjang tidak ditemukan." }, { status: 404 });
+      }
+
+      const { error } = await admin        .from("cart_item")
         .update({ qty_cartitem: qty })
         .eq("id_cart_item", cartItemId);
       if (error) throw error;
@@ -212,19 +248,23 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "cartItemId wajib." }, { status: 400 });
       }
 
-      const { error } = await admin.from("cart_item").delete().eq("id_cart_item", cartItemId);
-      if (error) throw error;
+      const { data: owned } = await admin
+        .from("cart_item")
+        .select("id_cart, cart!inner(id_user)")
+        .eq("id_cart_item", cartItemId)
+        .maybeSingle();
+      const cartOwner = (owned?.cart as { id_user?: string } | { id_user?: string }[] | null);
+      const ownerId = Array.isArray(cartOwner) ? cartOwner[0]?.id_user : cartOwner?.id_user;
+      if (ownerId !== userId) {
+        return NextResponse.json({ error: "Item keranjang tidak ditemukan." }, { status: 404 });
+      }
+
+      const { error } = await admin.from("cart_item").delete().eq("id_cart_item", cartItemId);      if (error) throw error;
       return NextResponse.json({ ok: true });
     }
 
     if (action === "clear") {
-      const userId = String(body.userId || "");
-      if (!userId) {
-        return NextResponse.json({ error: "userId wajib." }, { status: 400 });
-      }
-
-      const cartId = await getOrCreateCartId(admin, userId);
-      const { error } = await admin.from("cart_item").delete().eq("id_cart", cartId);
+      const cartId = await getOrCreateCartId(admin, userId);      const { error } = await admin.from("cart_item").delete().eq("id_cart", cartId);
       if (error) throw error;
       return NextResponse.json({ ok: true });
     }

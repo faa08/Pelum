@@ -1,4 +1,7 @@
-export interface ReturnChatMessage {
+import type { ChatReceiptFields } from "@/lib/chatReadReceipts";
+import { apiFetch } from "@/lib/api-client";
+
+export interface ReturnChatMessage extends ChatReceiptFields {
   id_message: string;
   id_chat: string;
   sender_role: "admin" | "customer";
@@ -14,14 +17,14 @@ export interface ReturnItem {
   created_at: string;
   order_item?: {
     id_order_item: string;
-    produk?: { id_produk: string; nama_produk: string; img: string } | null;
+    produk?: { id_produk: string; nama_produk: string; cover_img?: string | null; img?: string | null } | null;
     order?: { id_order: string; seller?: { nm_store: string } | null };
   };
 }
 
 export const returnService = {
   async completeOrder(orderId: string, userId: string): Promise<boolean> {
-    const res = await fetch("/api/orders/complete", {
+    const res = await apiFetch("/api/orders/complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ orderId, userId }),
@@ -39,7 +42,7 @@ export const returnService = {
     comment: string;
     photoReview?: string;
   }): Promise<boolean> {
-    const res = await fetch("/api/review", {
+    const res = await apiFetch("/api/review", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -51,7 +54,7 @@ export const returnService = {
 
   async getReviewedProductIds(userId: string, productIds: string[]): Promise<string[]> {
     if (!productIds.length) return [];
-    const res = await fetch(
+    const res = await apiFetch(
       `/api/review?userId=${encodeURIComponent(userId)}&productIds=${productIds.join(",")}`
     );
     const data = await res.json();
@@ -59,7 +62,7 @@ export const returnService = {
   },
 
   async submitReturn(userId: string, orderItemId: string, alasan: string): Promise<string> {
-    const res = await fetch("/api/return", {
+    const res = await apiFetch("/api/return", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, orderItemId, alasan }),
@@ -70,7 +73,7 @@ export const returnService = {
   },
 
   async listReturns(userId: string): Promise<ReturnItem[]> {
-    const res = await fetch(`/api/return?userId=${encodeURIComponent(userId)}`);
+    const res = await apiFetch(`/api/return?userId=${encodeURIComponent(userId)}`);
     const data = await res.json();
     if (!res.ok) return [];
     return data.returns || [];
@@ -78,15 +81,22 @@ export const returnService = {
 };
 
 export const returnChatService = {
-  async getMessages(chatId: string): Promise<ReturnChatMessage[]> {
-    const res = await fetch(`/api/return-chat?chatId=${encodeURIComponent(chatId)}`);
+  async getMessages(
+    chatId: string,
+    viewerRole?: "admin" | "customer",
+    options?: { markRead?: boolean }
+  ): Promise<ReturnChatMessage[]> {
+    const params = new URLSearchParams({ chatId });
+    if (viewerRole) params.set("viewerRole", viewerRole);
+    if (options?.markRead) params.set("markRead", "true");
+    const res = await apiFetch(`/api/return-chat?${params}`);
     const data = await res.json();
     if (!res.ok) return [];
     return data.messages || [];
   },
 
   async getRoomByRetur(returId: string) {
-    const res = await fetch(`/api/return-chat?returId=${encodeURIComponent(returId)}`);
+    const res = await apiFetch(`/api/return-chat?returId=${encodeURIComponent(returId)}`);
     const data = await res.json();
     if (!res.ok) return null;
     return data.room;
@@ -98,16 +108,19 @@ export const returnChatService = {
     senderId: string | null,
     text: string
   ): Promise<boolean> {
-    const res = await fetch("/api/return-chat", {
+    const res = await apiFetch("/api/return-chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "send", chatId, senderRole, senderId, text }),
     });
+    if (res.ok && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("pelum-notif-refresh"));
+    }
     return res.ok;
   },
 
   async listRoomsForAdmin() {
-    const res = await fetch("/api/return-chat?list=admin");
+    const res = await apiFetch("/api/return-chat?list=admin");
     const data = await res.json();
     if (!res.ok) return [];
     return data.rooms || [];

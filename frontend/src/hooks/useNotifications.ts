@@ -38,6 +38,21 @@ export function useNotifications() {
     };
   }, [load]);
 
+  useEffect(() => {
+    if (!userId) return;
+    const interval = setInterval(() => load(userId), 8000);
+    return () => clearInterval(interval);
+  }, [userId, load]);
+
+  useEffect(() => {
+    const onRefresh = () => {
+      const u = authService.getCurrentUser();
+      if (u?.id_user) load(u.id_user);
+    };
+    window.addEventListener("pelum-notif-refresh", onRefresh);
+    return () => window.removeEventListener("pelum-notif-refresh", onRefresh);
+  }, [load]);
+
   const unreadCount = notifications.filter((n) => n.unread).length;
 
   const handleMarkAllRead = async () => {
@@ -62,6 +77,16 @@ export function useNotifications() {
     );
   };
 
+  const handleOpen = async (notif: NotificationItem) => {
+    if (notif.unread) {
+      await notificationService.markAsRead(notif.id, true);
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notif.id ? { ...n, unread: false } : n))
+      );
+    }
+    return notif.link;
+  };
+
   const refresh = () => load(userId);
 
   return {
@@ -70,6 +95,7 @@ export function useNotifications() {
     handleMarkAllRead,
     handleClearAll,
     handleToggleRead,
+    handleOpen,
     refresh,
   };
 }

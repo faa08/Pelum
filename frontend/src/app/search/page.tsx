@@ -4,11 +4,12 @@ import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { Search, SlidersHorizontal, Star, ShoppingCart, ChevronRight } from "lucide-react";
+import { Search, SlidersHorizontal, Star, ShoppingCart, ChevronRight, Store, ShieldCheck } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import SearchBar from "@/components/SearchBar";
 import Footer from "@/components/Footer";
 import { productService } from "@/backend/productService";
+import { sellerService, type Seller, type StoreStats } from "@/backend/sellerService";
 import { cartService } from "@/backend/cartService";
 import { authService } from "@/backend/authService";
 import { productToCard, type ProductCard, ProductGridImage } from "@/lib/productUi";
@@ -20,12 +21,24 @@ const SORT_OPTIONS = [{ value: "relevansi", label: "Relevansi" }, { value: "harg
 
 function fmtPrice(p: number) { return `Rp ${p.toLocaleString("id-ID")}`; }
 
+function formatCount(n: number): string {
+  if (n >= 1000) {
+    const val = n / 1000;
+    return `${val % 1 === 0 ? val.toFixed(0) : val.toFixed(1).replace(/\.0$/, "")}RB`;
+  }
+  return String(n);
+}
+
+type StoreWithStats = Seller & { slug: string; stats: StoreStats };
+
 function SearchContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const query = searchParams.get("q") || "";
   const [products, setProducts] = useState<ProductCard[]>([]);
+  const [stores, setStores] = useState<StoreWithStats[]>([]);
   const [loading, setLoading] = useState(true);
+  const [storesLoading, setStoresLoading] = useState(false);
   const [sortBy, setSortBy] = useState("relevansi");
   const [selectedCats, setSelectedCats] = useState<string[]>([]);
   const [minPrice, setMinPrice] = useState("");
@@ -43,6 +56,35 @@ function SearchContent() {
       setLoading(false);
     }
     load();
+  }, [query]);
+
+  useEffect(() => {
+    if (!query.trim()) {
+      setStores([]);
+      return;
+    }
+
+    let cancelled = false;
+    async function loadStores() {
+      setStoresLoading(true);
+      try {
+        const found = await sellerService.searchStores(query, 3);
+        if (cancelled) return;
+        const withStats = await Promise.all(
+          found.map(async (store) => ({
+            ...store,
+            stats: await sellerService.getStoreStats(store.id_seller),
+          }))
+        );
+        if (!cancelled) setStores(withStats);
+      } catch {
+        if (!cancelled) setStores([]);
+      } finally {
+        if (!cancelled) setStoresLoading(false);
+      }
+    }
+    loadStores();
+    return () => { cancelled = true; };
   }, [query]);
 
   function toggleCat(cat: string) {
@@ -75,10 +117,75 @@ function SearchContent() {
             <ChevronRight size={13} />
             <span style={{ color: C.text, fontWeight: 600 }}>Hasil Pencarian{query ? ` untuk "${query}"` : ""}</span>
           </nav>
+
+          {query && (storesLoading || stores.length > 0) && (
+            <section style={{ marginBottom: 28 }}>
+              <div style={{ marginBottom: 14 }}>
+                <h2 style={{ fontSize: "0.9375rem", fontWeight: 800, color: C.text, margin: 0, textTransform: "uppercase", letterSpacing: "0.02em" }}>
+                  Toko berkaitan dengan &quot;{query}&quot;
+                </h2>
+              </div>
+              {storesLoading ? (
+                <div style={{ padding: 24, textAlign: "center", color: C.textMuted, background: "white", border: `1.5px solid ${C.border}`, borderRadius: 12 }}>
+                  Mencari toko...
+                </div>
+              ) : (
+                <div className="search-stores-row">
+                  {stores.map((store) => (
+                    <Link
+                      key={store.id_seller}
+                      href={`/toko/${store.slug}`}
+                      className="search-store-card"
+                    >
+                      <div className="search-store-card-left">
+                        <div className="search-store-avatar">
+                          {store.logo_toko ? (
+                            <Image src={store.logo_toko} alt={store.nm_store} width={64} height={64} style={{ objectFit: "cover", borderRadius: "50%" }} />
+                          ) : (
+                            <Store size={28} color={C.primary} />
+                          )}
+                        </div>
+                        <div className="search-store-info">
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            <h3 style={{ fontSize: "0.9375rem", fontWeight: 800, color: C.text, margin: 0 }}>{store.nm_store}</h3>
+                            {store.is_verified && (
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: "0.65rem", fontWeight: 800, color: "#059669", background: "#ECFDF5", padding: "2px 6px", borderRadius: 4 }}>
+                                <ShieldCheck size={11} /> Terverifikasi
+                              </span>
+                            )}
+                          </div>
+                          <p style={{ fontSize: "0.75rem", color: C.textMuted, margin: "4px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 280 }}>
+                            {formatCount(store.stats.followerCount)} Pengikut
+                          </p>
+                        </div>
+                      </div>
+                      <div className="search-store-stats">
+                        <div className="search-store-stat">
+                          <span className="search-store-stat-label">Produk</span>
+                          <span className="search-store-stat-value">{store.stats.productCount}</span>
+                        </div>
+                        <div className="search-store-stat">
+                          <span className="search-store-stat-label">Penilaian</span>
+                          <span className="search-store-stat-value">{store.stats.avgRating > 0 ? store.stats.avgRating : "-"}</span>
+                        </div>
+                        <div className="search-store-stat">
+                          <span className="search-store-stat-label">Terjual</span>
+                          <span className="search-store-stat-value">{formatCount(store.stats.totalSold)}</span>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <Search size={20} color={C.primary} />
-              <h1 style={{ fontSize: "1.25rem", fontWeight: 800, color: C.text, margin: 0 }}>{query ? `"${query}"` : "Semua Produk"}</h1>
+              <h1 style={{ fontSize: "1.25rem", fontWeight: 800, color: C.text, margin: 0 }}>
+                {query ? `Produk untuk "${query}"` : "Semua Produk"}
+              </h1>
               <span style={{ fontSize: "0.875rem", color: C.textMuted }}>({sorted.length} produk)</span>
             </div>
             <div style={{ display: "flex", gap: 10 }}>
@@ -87,8 +194,8 @@ function SearchContent() {
               </select>
             </div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "240px 1fr", gap: 28, alignItems: "start" }}>
-            <aside style={{ background: "white", border: `1.5px solid ${C.border}`, borderRadius: 12, padding: 20, position: "sticky", top: 88 }}>
+          <div className="catalog-layout">
+            <aside className="catalog-sidebar" style={{ background: "white", border: `1.5px solid ${C.border}`, borderRadius: 12, padding: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                 <h3 style={{ fontSize: "0.9375rem", fontWeight: 800, color: C.text, margin: 0, display: "flex", alignItems: "center", gap: 6 }}><SlidersHorizontal size={15} />Filter</h3>
                 <button onClick={() => { setSelectedCats([]); setMinPrice(""); setMaxPrice(""); setMinRating(0); }} style={{ fontSize: "0.75rem", color: C.primary, fontWeight: 700, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>Reset</button>
@@ -133,7 +240,7 @@ function SearchContent() {
                   <p style={{ fontSize: "0.875rem", color: C.textMuted, maxWidth: 300, margin: 0 }}>Coba kata kunci lain atau ubah filter pencarian kamu.</p>
                 </div>
               ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 18 }}>
+                <div className="search-products-grid">
                   {sorted.map((p) => (
                     <article key={p.id} style={{ background: "white", border: `1.5px solid ${C.border}`, borderRadius: 12, overflow: "hidden", display: "flex", flexDirection: "column" }}>
                       <Link href={`/produk/${p.slug}`} style={{ textDecoration: "none" }}>

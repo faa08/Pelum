@@ -1,4 +1,12 @@
 import { supabase } from "./supabase";
+import {
+  parseVariantRaw,
+  serializeVariantPayload,
+  totalInventoryStock,
+  type VariantInventoryEntry,
+} from "@/lib/variantInventory";
+
+export type { VariantInventoryEntry };
 
 export interface ProductVariantOption {
   name: string;
@@ -17,6 +25,7 @@ export interface ProductExtras {
   ketahanan?: string;
   info_tambahan?: string;
   variants?: ProductVariant[];
+  variantInventory?: VariantInventoryEntry[];
   berat?: number;
 }
 
@@ -38,6 +47,7 @@ export interface Product {
   nama_brand?: string;
   kode_produk?: string;
   variants?: ProductVariant[];
+  variantInventory?: VariantInventoryEntry[];
   bahan?: string;
   asal_produk?: string;
   ketahanan?: string;
@@ -61,42 +71,26 @@ const slugify = (text: string) => {
     .replace(/-+$/, "");
 };
 
+function escapeIlike(value: string): string {
+  return value.replace(/[%_\\]/g, "\\$&");
+}
+
+export type SearchSuggestion = {
+  name: string;
+  category: string;
+  slug: string;
+  link: string;
+  type: "product" | "category" | "store";
+};
+
 function parseVariants(raw: unknown): ProductVariant[] {
-  if (!raw) return [];
-  try {
-    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-    if (!Array.isArray(parsed)) return [];
+  return parseVariantRaw(raw).groups;
+}
 
-    const groups: ProductVariant[] = [];
-    for (const v of parsed) {
-      if (!v || typeof v.label !== "string") continue;
-      const label = String(v.label).trim();
-      if (!label) continue;
-
-      if (Array.isArray(v.options)) {
-        const options = v.options
-          .map((o: Record<string, unknown>) => ({
-            name: String(o.name ?? "").trim(),
-            image: o.image ? String(o.image) : undefined,
-            price: o.price != null && o.price !== "" ? Number(o.price) : undefined,
-          }))
-          .filter((o: { name: string }) => o.name);
-        if (options.length) groups.push({ label, options });
-        continue;
-      }
-
-      // format lama: { label, values: string[] }
-      if (Array.isArray(v.values)) {
-        const options = v.values
-          .map((x: unknown) => ({ name: String(x).trim() }))
-          .filter((o: { name: string }) => o.name);
-        if (options.length) groups.push({ label, options });
-      }
-    }
-    return groups;
-  } catch {
-    return [];
-  }
+function buildVarianPayload(extras?: ProductExtras): unknown {
+  const groups = extras?.variants || [];
+  const inventory = extras?.variantInventory || [];
+  return serializeVariantPayload(groups, inventory);
 }
 
 type GetProductsOptions = {
@@ -107,7 +101,48 @@ type GetProductsOptions = {
   includeFullDetails?: boolean;
   /** Muat kolom img untuk thumbnail (admin / toko mitra) */
   includeImages?: boolean;
+  /** Ambil img hanya untuk produk tanpa cover_img (jumlah max, default min(limit, 24)) */
+  hydrateImages?: boolean | number;
 };
+
+const PRODUCT_IMG_PLACEHOLDER = "/product-keramik.png";
+
+async function hydrateMissingProductImages(
+  products: Product[],
+  maxCount: number
+): Promise<Product[]> {
+  if (isPlaceholder() || maxCount <= 0) return products;
+
+  const targets = products
+    .filter((p) => p.img === PRODUCT_IMG_PLACEHOLDER)
+    .slice(0, maxCount);
+  if (!targets.length) return products;
+
+  const ids = targets.map((p) => p.id_produk);
+  const { data, error } = await supabase
+    .from("produk")
+    .select("id_produk, img, cover_img")
+    .in("id_produk", ids);
+
+  if (error || !data?.length) {
+    if (error) console.warn("[productService] hydrate images:", error.message);
+    return products;
+  }
+
+  const patch = new Map<string, { cover: string; images: string[] }>();
+  for (const row of data) {
+    patch.set(
+      row.id_produk as string,
+      resolveProductImages(row.cover_img as string | null, row.img as string | null)
+    );
+  }
+
+  return products.map((p) => {
+    const resolved = patch.get(p.id_produk);
+    if (!resolved || p.img !== PRODUCT_IMG_PLACEHOLDER) return p;
+    return { ...p, img: resolved.cover, images: resolved.images };
+  });
+}
 
 function buildListSelect(publicOnly?: boolean, includeImages?: boolean) {
   const sellerRel = publicOnly ? "seller!inner" : "seller";
@@ -124,6 +159,21 @@ const PRODUCT_FULL_SELECT = `
   *,
   kategori ( id_kategori, nama_kategori ),
   seller ( id_seller, nm_store, is_verified )
+`;
+
+/** Detail produk tanpa kolom img (base64 besar) — muat img terpisah bila perlu */
+const PRODUCT_DETAIL_BASE_SELECT = `
+  id_produk, id_seller, id_kategori, nama_produk, slug, harga, berat, "desc", varian,
+  produk_stock, stat_produk, created_at, cover_img,
+  kategori ( id_kategori, nama_kategori ),
+  seller ( id_seller, nm_store, logo_toko, is_verified, deskripsi, addr, no_telp, created_at )
+`;
+
+const PRODUCT_DETAIL_WITH_IMG_SELECT = `
+  id_produk, id_seller, id_kategori, nama_produk, slug, harga, berat, "desc", varian,
+  produk_stock, stat_produk, created_at, cover_img, img,
+  kategori ( id_kategori, nama_kategori ),
+  seller ( id_seller, nm_store, logo_toko, is_verified, deskripsi, addr, no_telp, created_at )
 `;
 
 /** URL/thumbnail ringan untuk listing — hindari base64 besar di query list */
@@ -151,7 +201,7 @@ function extractCoverImg(img: string | null | undefined): string | null {
 }
 
 function resolveProductImages(cover_img?: string | null, img?: string | null): { cover: string; images: string[] } {
-  const fallback = "/product-keramik.png";
+  const fallback = PRODUCT_IMG_PLACEHOLDER;
   const coverUrl = cover_img?.trim();
   if (coverUrl) {
     return { cover: coverUrl, images: [coverUrl] };
@@ -194,6 +244,10 @@ const mapDbRowToProduct = (p: Record<string, unknown>): Product => {
   const idProduk = p.id_produk as string;
   const slug = (p.slug as string) || idProduk;
 
+  const { groups: variantGroups, inventory: variantInventory } = parseVariantRaw(p.varian);
+  const stockFromInventory =
+    variantInventory.length > 0 ? totalInventoryStock(variantInventory) : Number(p.produk_stock);
+
   return {
     id_produk: idProduk,
     id_seller: p.id_seller as string,
@@ -203,8 +257,8 @@ const mapDbRowToProduct = (p: Record<string, unknown>): Product => {
     categorySlug: catSlug,
     slug,
     harga: Number(p.harga),
-    stok: Number(p.produk_stock),
-    status: Number(p.produk_stock) > 0 ? "Aktif" : "Stok Habis",
+    stok: stockFromInventory,
+    status: stockFromInventory > 0 ? "Aktif" : "Stok Habis",
     img: coverImg,
     images,
     desc: (p.desc as string) || "",
@@ -216,7 +270,8 @@ const mapDbRowToProduct = (p: Record<string, unknown>): Product => {
     asal_produk: (p.asal_produk as string) || undefined,
     ketahanan: (p.ketahanan as string) || undefined,
     info_tambahan: (p.info_tambahan as string) || undefined,
-    variants: parseVariants(p.varian),
+    variants: variantGroups,
+    variantInventory: variantInventory.length > 0 ? variantInventory : undefined,
   };
 };
 
@@ -324,7 +379,16 @@ export const productService = {
         return [];
       }
 
-      return (data || []).map((p) => mapDbRowToProduct(p as unknown as Record<string, unknown>));
+      const mapped = (data || []).map((p) => mapDbRowToProduct(p as unknown as Record<string, unknown>));
+
+      const hydrateLimit =
+        options?.hydrateImages === false
+          ? 0
+          : typeof options?.hydrateImages === "number"
+            ? options.hydrateImages
+            : Math.min(cap, 24);
+
+      return hydrateMissingProductImages(mapped, hydrateLimit);
     } catch (err) {
       console.error("productService getProducts failed:", err);
       return [];
@@ -355,7 +419,8 @@ export const productService = {
         return [];
       }
 
-      return (data || []).map((p) => mapDbRowToProduct(p as unknown as Record<string, unknown>));
+      const mapped = (data || []).map((p) => mapDbRowToProduct(p as unknown as Record<string, unknown>));
+      return hydrateMissingProductImages(mapped, 48);
     } catch (err) {
       console.error("productService getProductsBySeller failed:", err);
       return [];
@@ -458,6 +523,7 @@ export const productService = {
       ketahanan: extras?.ketahanan,
       info_tambahan: extras?.info_tambahan,
       variants: extras?.variants || [],
+      variantInventory: extras?.variantInventory,
     };
 
     if (isPlaceholder()) {
@@ -505,7 +571,7 @@ export const productService = {
         asal_produk: newProduct.asal_produk || null,
         ketahanan: newProduct.ketahanan || null,
         info_tambahan: newProduct.info_tambahan || null,
-        varian: newProduct.variants || [],
+        varian: buildVarianPayload(extras),
       };
       if (dbCategoryId) {
         insertPayload.id_kategori = dbCategoryId;
@@ -600,6 +666,7 @@ export const productService = {
             ketahanan: extras?.ketahanan ?? products[idx].ketahanan,
             info_tambahan: extras?.info_tambahan ?? products[idx].info_tambahan,
             variants: extras?.variants ?? products[idx].variants ?? [],
+            variantInventory: extras?.variantInventory ?? products[idx].variantInventory,
           };
           localStorage.setItem("pelum_products", JSON.stringify(products));
           return true;
@@ -626,7 +693,7 @@ export const productService = {
         asal_produk: extras?.asal_produk || null,
         ketahanan: extras?.ketahanan || null,
         info_tambahan: extras?.info_tambahan || null,
-        varian: extras?.variants || [],
+        varian: buildVarianPayload(extras),
         updated_at: new Date().toISOString(),
       };
       if (dbCategoryId) {
@@ -737,8 +804,11 @@ export const productService = {
   },
 
   // Get product by Slug or UUID ID
-  async getProductBySlugOrId(slugOrId: string): Promise<any | null> {
-    console.log("Calling productService.getProductBySlugOrId:", slugOrId);
+  async getProductBySlugOrId(
+    slugOrId: string,
+    options?: { includeImages?: boolean }
+  ): Promise<any | null> {
+    const includeImages = options?.includeImages !== false;
 
     if (isPlaceholder()) {
       const stored = localStorage.getItem("pelum_products");
@@ -765,14 +835,10 @@ export const productService = {
 
     try {
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slugOrId);
-      
-      let query = supabase
-        .from("produk")
-        .select(`
-          *,
-          seller ( id_seller, nm_store, logo_toko, is_verified, deskripsi, addr, no_telp, created_at ),
-          kategori ( id_kategori, nama_kategori )
-        `);
+
+      const selectCols = includeImages ? PRODUCT_DETAIL_WITH_IMG_SELECT : PRODUCT_DETAIL_BASE_SELECT;
+
+      let query = supabase.from("produk").select(selectCols);
 
       if (isUuid) {
         query = query.eq("id_produk", slugOrId);
@@ -784,14 +850,36 @@ export const productService = {
       if (error) throw error;
       if (!data) return null;
 
-      const mapped = mapDbRowToProduct(data as unknown as Record<string, unknown>);
+      const row = data as unknown as Record<string, unknown>;
+      const mapped = mapDbRowToProduct(row);
       return {
         ...mapped,
-        seller: data.seller,
-        kategori: data.kategori,
+        seller: row.seller,
+        kategori: row.kategori,
       };
     } catch (err) {
       console.error("productService.getProductBySlugOrId failed:", err);
+      return null;
+    }
+  },
+
+  /** Muat galeri gambar penuh (kolom img) untuk satu produk */
+  async hydrateProductDetailImages(
+    productId: string
+  ): Promise<{ cover: string; images: string[] } | null> {
+    if (isPlaceholder()) return null;
+
+    try {
+      const { data, error } = await supabase
+        .from("produk")
+        .select("img, cover_img")
+        .eq("id_produk", productId)
+        .maybeSingle();
+
+      if (error || !data) return null;
+      return resolveProductImages(data.cover_img as string | null, data.img as string | null);
+    } catch (err) {
+      console.error("productService.hydrateProductDetailImages failed:", err);
       return null;
     }
   },
@@ -847,7 +935,7 @@ export const productService = {
       // Get user name
       const users = JSON.parse(localStorage.getItem("pelum_users") || "[]");
       const user = users.find((u: any) => u.id_user === userId);
-      const name = user ? (user.nama_lengkap || user.username) : "Siti Rahayu";
+      const name = user ? (user.nama_lengkap || user.username) : "Pelanggan";
       
       reviews.unshift({
         id: Math.random().toString(36).substring(2, 9),
@@ -974,36 +1062,240 @@ export const productService = {
     return result;
   },
 
+  async searchSuggestions(query: string, limit = 6): Promise<SearchSuggestion[]> {
+    const q = query.trim();
+    if (!q) return [];
+
+    if (isPlaceholder()) {
+      const stored = localStorage.getItem("pelum_products");
+      const products: Product[] = stored ? JSON.parse(stored) : [];
+      const lower = q.toLowerCase();
+      return products
+        .filter(
+          (p) =>
+            p.nama_produk.toLowerCase().includes(lower) ||
+            p.category.toLowerCase().includes(lower)
+        )
+        .slice(0, limit)
+        .map((p) => ({
+          name: p.nama_produk,
+          category: p.category || "UMKM",
+          slug: p.categorySlug || slugify(p.category || "umkm"),
+          link: `/produk/${p.slug || p.id_produk}`,
+          type: "product" as const,
+        }));
+    }
+
+    try {
+      const pattern = `%${escapeIlike(q)}%`;
+      const suggestions: SearchSuggestion[] = [];
+
+      const { data: cats } = await supabase
+        .from("kategori")
+        .select("nama_kategori")
+        .ilike("nama_kategori", pattern)
+        .limit(2);
+
+      for (const cat of cats || []) {
+        const name = cat.nama_kategori as string;
+        const catSlug = slugify(name);
+        suggestions.push({
+          name,
+          category: "Kategori",
+          slug: "kategori",
+          link: `/kategori/${catSlug}`,
+          type: "category",
+        });
+      }
+
+      const { data: stores } = await supabase
+        .from("seller")
+        .select("nm_store")
+        .eq("is_verified", true)
+        .ilike("nm_store", pattern)
+        .limit(2);
+
+      for (const store of stores || []) {
+        const name = store.nm_store as string;
+        const storeSlug = slugify(name);
+        suggestions.push({
+          name,
+          category: "Toko",
+          slug: storeSlug,
+          link: `/toko/${storeSlug}`,
+          type: "store",
+        });
+      }
+
+      const productLimit = Math.max(1, limit - suggestions.length);
+      const { data, error } = await supabase
+        .from("produk")
+        .select(buildListSelect(true, false))
+        .eq("stat_produk", "tersedia")
+        .gt("produk_stock", 0)
+        .eq("seller.is_verified", true)
+        .or(`nama_produk.ilike.${pattern},slug.ilike.${pattern}`)
+        .order("created_at", { ascending: false })
+        .limit(productLimit);
+
+      if (error) {
+        logSupabaseError("Supabase search suggestions error:", error);
+        return suggestions;
+      }
+
+      const mapped = (data || []).map((p) => mapDbRowToProduct(p as unknown as Record<string, unknown>));
+      const hydrated = await hydrateMissingProductImages(mapped, productLimit);
+
+      for (const p of hydrated) {
+        suggestions.push({
+          name: p.nama_produk,
+          category: p.category || "UMKM",
+          slug: p.categorySlug || slugify(p.category || "umkm"),
+          link: `/produk/${p.slug || p.id_produk}`,
+          type: "product",
+        });
+      }
+
+      return suggestions.slice(0, limit);
+    } catch (err) {
+      console.error("productService.searchSuggestions failed:", err);
+      return [];
+    }
+  },
+
   async searchProducts(query: string, limit = 50): Promise<Product[]> {
-    const all = await this.getProducts({ publicOnly: true, limit: 120 });
-    const q = query.trim().toLowerCase();
-    if (!q) return all.slice(0, limit);
-    return all
-      .filter(
-        (p) =>
-          p.nama_produk.toLowerCase().includes(q) ||
-          p.category.toLowerCase().includes(q) ||
-          (p.desc && p.desc.toLowerCase().includes(q))
-      )
-      .slice(0, limit);
+    const q = query.trim();
+    if (!q) {
+      return this.getProducts({ publicOnly: true, limit });
+    }
+
+    if (isPlaceholder()) {
+      const stored = localStorage.getItem("pelum_products");
+      const products: Product[] = stored ? JSON.parse(stored) : [];
+      const lower = q.toLowerCase();
+      return products
+        .filter(
+          (p) =>
+            p.nama_produk.toLowerCase().includes(lower) ||
+            p.category.toLowerCase().includes(lower) ||
+            (p.desc && p.desc.toLowerCase().includes(lower))
+        )
+        .slice(0, limit);
+    }
+
+    try {
+      const pattern = `%${escapeIlike(q)}%`;
+      const { data, error } = await supabase
+        .from("produk")
+        .select(buildListSelect(true, false))
+        .eq("stat_produk", "tersedia")
+        .gt("produk_stock", 0)
+        .eq("seller.is_verified", true)
+        .or(`nama_produk.ilike.${pattern},slug.ilike.${pattern}`)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+
+      if (error) {
+        logSupabaseError("Supabase search products error:", error);
+        return [];
+      }
+
+      const mapped = (data || []).map((p) => mapDbRowToProduct(p as unknown as Record<string, unknown>));
+      return hydrateMissingProductImages(mapped, Math.min(limit, 24));
+    } catch (err) {
+      console.error("productService.searchProducts failed:", err);
+      return [];
+    }
   },
 
   async getSimilarProducts(
     productId: string,
-    categorySlug?: string,
-    sellerId?: string,
-    limit = 5
+    options?: { id_kategori?: string; sellerId?: string; categorySlug?: string; limit?: number }
   ): Promise<Product[]> {
-    const all = await this.getProducts({ publicOnly: true, limit: 100 });
-    const filtered = all.filter((p) => {
-      if (p.id_produk === productId) return false;
-      if (categorySlug && p.categorySlug === categorySlug) return true;
-      if (sellerId && p.id_seller === sellerId) return true;
-      return false;
-    });
-    if (filtered.length >= limit) return filtered.slice(0, limit);
-    const rest = all.filter((p) => p.id_produk !== productId && !filtered.includes(p));
-    return [...filtered, ...rest].slice(0, limit);
+    const limit = options?.limit ?? 5;
+
+    if (isPlaceholder()) {
+      const stored = localStorage.getItem("pelum_products");
+      const products: Product[] = stored ? JSON.parse(stored) : [];
+      const filtered = products.filter((p) => {
+        if (p.id_produk === productId) return false;
+        if (options?.categorySlug && p.categorySlug === options.categorySlug) return true;
+        if (options?.sellerId && p.id_seller === options.sellerId) return true;
+        return false;
+      });
+      if (filtered.length >= limit) return filtered.slice(0, limit);
+      const rest = products.filter((p) => p.id_produk !== productId && !filtered.includes(p));
+      return [...filtered, ...rest].slice(0, limit);
+    }
+
+    try {
+      const results: Product[] = [];
+      const exclude = new Set<string>([productId]);
+      const listSelect = buildListSelect(true, false);
+
+      if (options?.id_kategori) {
+        const { data } = await supabase
+          .from("produk")
+          .select(listSelect)
+          .eq("stat_produk", "tersedia")
+          .gt("produk_stock", 0)
+          .eq("seller.is_verified", true)
+          .eq("id_kategori", options.id_kategori)
+          .neq("id_produk", productId)
+          .limit(limit);
+        for (const row of data || []) {
+          const p = mapDbRowToProduct(row as unknown as Record<string, unknown>);
+          if (!exclude.has(p.id_produk)) {
+            results.push(p);
+            exclude.add(p.id_produk);
+          }
+        }
+      }
+
+      if (results.length < limit && options?.sellerId) {
+        const { data } = await supabase
+          .from("produk")
+          .select(listSelect)
+          .eq("stat_produk", "tersedia")
+          .gt("produk_stock", 0)
+          .eq("seller.is_verified", true)
+          .eq("id_seller", options.sellerId)
+          .limit(limit + exclude.size);
+        for (const row of data || []) {
+          if (results.length >= limit) break;
+          const p = mapDbRowToProduct(row as unknown as Record<string, unknown>);
+          if (!exclude.has(p.id_produk)) {
+            results.push(p);
+            exclude.add(p.id_produk);
+          }
+        }
+      }
+
+      if (results.length < limit) {
+        const { data } = await supabase
+          .from("produk")
+          .select(listSelect)
+          .eq("stat_produk", "tersedia")
+          .gt("produk_stock", 0)
+          .eq("seller.is_verified", true)
+          .neq("id_produk", productId)
+          .order("created_at", { ascending: false })
+          .limit(limit + exclude.size);
+        for (const row of data || []) {
+          if (results.length >= limit) break;
+          const p = mapDbRowToProduct(row as unknown as Record<string, unknown>);
+          if (!exclude.has(p.id_produk)) {
+            results.push(p);
+            exclude.add(p.id_produk);
+          }
+        }
+      }
+
+      return hydrateMissingProductImages(results, limit);
+    } catch (err) {
+      console.error("productService.getSimilarProducts failed:", err);
+      return [];
+    }
   },
 
   async getStoreReviews(sellerId: string): Promise<

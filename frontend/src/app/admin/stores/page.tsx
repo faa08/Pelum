@@ -1,8 +1,15 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { sellerService, Seller, generateStoreEmail } from "@/backend/sellerService";
-import { supabase } from "@/backend/supabase";
+import Link from "next/link";
+import { sellerService, Seller } from "@/backend/sellerService";
+import DraftResumeBanner from "@/components/admin/DraftResumeBanner";
+import {
+  ADMIN_DRAFT_KEYS,
+  clearAdminDraft,
+  hasAdminDraft,
+  loadAdminDraft,
+} from "@/lib/adminDrafts";
 
 interface Store {
   id: string;
@@ -18,28 +25,8 @@ export default function AdminStoresPage() {
   const [toasts, setToasts] = useState<{ id: number; message: string; type: "info" | "error" | "success" }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [stores, setStores] = useState<Store[]>([]);
-  const [rawSellers, setRawSellers] = useState<Seller[]>([]);
-
-  // Add store Modal States
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [newStoreName, setNewStoreName] = useState("");
-  const [newStoreOwnerName, setNewStoreOwnerName] = useState("");
-  const [newStoreLogo, setNewStoreLogo] = useState("");
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
-  const [isAddingStore, setIsAddingStore] = useState(false);
-
-  // Edit store Modal States
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [editingStoreId, setEditingStoreId] = useState<string | null>(null);
-  const [editStoreName, setEditStoreName] = useState("");
-  const [editStoreOwnerName, setEditStoreOwnerName] = useState("");
-  const [editStoreDesc, setEditStoreDesc] = useState("");
-  const [editStoreAddr, setEditStoreAddr] = useState("");
-  const [editStorePhone, setEditStorePhone] = useState("");
-  const [editStoreLogo, setEditStoreLogo] = useState("");
-  const [editStoreStatus, setEditStoreStatus] = useState<"Aktif" | "Nonaktif">("Aktif");
-  const [editUploadProgress, setEditUploadProgress] = useState<number | null>(null);
-  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [newDraftAt, setNewDraftAt] = useState<number | undefined>();
+  const [editDrafts, setEditDrafts] = useState<{ id: string; name: string; savedAt: number }[]>([]);
 
   const formatSellers = (data: Seller[]): Store[] =>
     data.map((s) => ({
@@ -51,12 +38,37 @@ export default function AdminStoresPage() {
       logo: s.logo_toko || "https://images.unsplash.com/photo-1544816155-12df9643f363?q=80&w=100&auto=format&fit=crop",
     }));
 
+  const refreshDraftBanners = (sellerList: Seller[]) => {
+    if (hasAdminDraft(ADMIN_DRAFT_KEYS.storeNew)) {
+      const d = loadAdminDraft<{ name?: string }>(ADMIN_DRAFT_KEYS.storeNew);
+      setNewDraftAt(d?.savedAt);
+    } else {
+      setNewDraftAt(undefined);
+    }
+
+    const edits: { id: string; name: string; savedAt: number }[] = [];
+    for (const s of sellerList) {
+      const key = ADMIN_DRAFT_KEYS.storeEdit(s.id_seller);
+      if (hasAdminDraft(key)) {
+        const d = loadAdminDraft<{ name?: string }>(key);
+        if (d?.savedAt) {
+          edits.push({
+            id: s.id_seller,
+            name: d.name?.trim() || s.nm_store,
+            savedAt: d.savedAt,
+          });
+        }
+      }
+    }
+    setEditDrafts(edits);
+  };
+
   const loadData = async () => {
     setIsLoading(true);
     try {
       const data = await sellerService.getSellers();
-      setRawSellers(data);
       setStores(formatSellers(data));
+      refreshDraftBanners(data);
     } catch (error) {
       console.error("Gagal memuat data toko:", error);
       showToast("Gagal memuat data toko.", "error");
@@ -85,187 +97,12 @@ export default function AdminStoresPage() {
 
     const success = await sellerService.deleteSeller(id);
     if (success) {
+      clearAdminDraft(ADMIN_DRAFT_KEYS.storeEdit(id));
       setStores((prev) => prev.filter((s) => s.id !== id));
-      setRawSellers((prev) => prev.filter((s) => s.id_seller !== id));
       showToast(`Toko ${name} dan seluruh produknya berhasil dihapus.`, "success");
+      refreshDraftBanners([]);
     } else {
       showToast(`Gagal menghapus toko ${name}.`, "error");
-    }
-  };
-
-  const handleOpenEditModal = (storeId: string) => {
-    const seller = rawSellers.find((s) => s.id_seller === storeId);
-    if (!seller) {
-      showToast("Data toko tidak ditemukan.", "error");
-      return;
-    }
-
-    setEditingStoreId(storeId);
-    setEditStoreName(seller.nm_store);
-    setEditStoreOwnerName(seller.users?.nama_lengkap || "");
-    setEditStoreDesc(seller.deskripsi || "");
-    setEditStoreAddr(seller.addr || "");
-    setEditStorePhone(seller.no_telp || "");
-    setEditStoreLogo(seller.logo_toko || "");
-    setEditStoreStatus(seller.is_verified ? "Aktif" : "Nonaktif");
-    setEditUploadProgress(null);
-    setShowEditModal(true);
-  };
-
-  const handleCloseEditModal = () => {
-    setShowEditModal(false);
-    setEditingStoreId(null);
-    setEditStoreName("");
-    setEditStoreOwnerName("");
-    setEditStoreDesc("");
-    setEditStoreAddr("");
-    setEditStorePhone("");
-    setEditStoreLogo("");
-    setEditStoreStatus("Aktif");
-    setEditUploadProgress(null);
-    setIsSavingEdit(false);
-  };
-
-  const handleEditStoreSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingStoreId || !editStoreName.trim() || !editStoreOwnerName.trim()) {
-      alert("Nama Toko dan Nama Pemilik wajib diisi.");
-      return;
-    }
-
-    setIsSavingEdit(true);
-    try {
-      const success = await sellerService.updateSeller(editingStoreId, {
-        nm_store: editStoreName.trim(),
-        nama_pemilik: editStoreOwnerName.trim(),
-        deskripsi: editStoreDesc.trim(),
-        addr: editStoreAddr.trim(),
-        no_telp: editStorePhone.trim(),
-        logo_toko: editStoreLogo || undefined,
-        is_verified: editStoreStatus === "Aktif",
-      });
-
-      if (success) {
-        showToast(`Toko ${editStoreName} berhasil diperbarui!`, "success");
-        await loadData();
-        handleCloseEditModal();
-      } else {
-        showToast("Gagal memperbarui data toko.", "error");
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Gagal memperbarui data toko.";
-      showToast(message, "error");
-    } finally {
-      setIsSavingEdit(false);
-    }
-  };
-
-  const uploadLogo = async (
-    file: File,
-    setLogo: (url: string) => void,
-    setProgress: (p: number | null) => void
-  ) => {
-    if (file.size > 2 * 1024 * 1024) {
-      alert("Ukuran gambar logo terlalu besar! Maksimal adalah 2MB.");
-      return;
-    }
-
-    setProgress(0);
-    setLogo("");
-
-    const fileExt = file.name.split(".").pop();
-    const fileName = `logo-${Math.random().toString(36).substring(2, 15)}-${Date.now()}.${fileExt}`;
-    const filePath = `store-logos/${fileName}`;
-
-    try {
-      setProgress(20);
-      const { error } = await supabase.storage.from("products").upload(filePath, file, {
-        cacheControl: "3600",
-        upsert: false,
-      });
-      if (error) throw error;
-      setProgress(80);
-
-      const { data: publicUrlData } = supabase.storage.from("products").getPublicUrl(filePath);
-      if (publicUrlData?.publicUrl) {
-        setLogo(publicUrlData.publicUrl);
-        setProgress(100);
-      } else {
-        throw new Error("Gagal mendapatkan public URL.");
-      }
-    } catch (err) {
-      console.warn("Gagal mengunggah ke Supabase Storage, menggunakan mode fallback base64...", err);
-      setProgress(50);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setLogo(event.target.result as string);
-          setProgress(100);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.[0]) {
-      await uploadLogo(e.target.files[0], setNewStoreLogo, setUploadProgress);
-    }
-  };
-
-  const handleEditLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.[0]) {
-      await uploadLogo(e.target.files[0], setEditStoreLogo, setEditUploadProgress);
-    }
-  };
-
-  const handleCloseModal = () => {
-    setShowAddModal(false);
-    setNewStoreName("");
-    setNewStoreOwnerName("");
-    setNewStoreLogo("");
-    setUploadProgress(null);
-    setIsAddingStore(false);
-  };
-
-  const handleAddStoreSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isAddingStore) return;
-    if (!newStoreName.trim() || !newStoreOwnerName.trim()) {
-      alert("Nama Toko dan Nama Pemilik wajib diisi.");
-      return;
-    }
-
-    const generatedEmail = generateStoreEmail(newStoreName.trim());
-
-    setIsAddingStore(true);
-    try {
-      const newStore = await sellerService.createStore(
-        newStoreName.trim(),
-        generatedEmail,
-        "",
-        "",
-        "Indonesia",
-        "",
-        "",
-        "",
-        true,
-        newStoreOwnerName.trim(),
-        newStoreLogo || undefined
-      );
-
-      if (newStore) {
-        showToast(`Toko ${newStoreName} berhasil ditambahkan dan langsung aktif!`, "success");
-        await loadData();
-        handleCloseModal();
-      } else {
-        showToast("Gagal menambahkan toko. Periksa koneksi database atau hak akses Supabase.", "error");
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Gagal menambahkan toko.";
-      showToast(message, "error");
-    } finally {
-      setIsAddingStore(false);
     }
   };
 
@@ -288,6 +125,31 @@ export default function AdminStoresPage() {
           Kelola dan awasi seluruh ekosistem pedagang UMKM Anda.
         </p>
       </header>
+
+      {newDraftAt !== undefined && (
+        <DraftResumeBanner
+          href="/admin/stores/new"
+          label="tambah toko"
+          savedAt={newDraftAt}
+          onDiscard={() => {
+            clearAdminDraft(ADMIN_DRAFT_KEYS.storeNew);
+            setNewDraftAt(undefined);
+          }}
+        />
+      )}
+
+      {editDrafts.map((d) => (
+        <DraftResumeBanner
+          key={d.id}
+          href={`/admin/stores/${d.id}/edit`}
+          label={`edit toko "${d.name}"`}
+          savedAt={d.savedAt}
+          onDiscard={() => {
+            clearAdminDraft(ADMIN_DRAFT_KEYS.storeEdit(d.id));
+            setEditDrafts((prev) => prev.filter((x) => x.id !== d.id));
+          }}
+        />
+      ))}
 
       <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-xl flex items-center justify-between shadow-[0_8px_30px_rgb(0,0,0,0.02)] hover:shadow-md transition">
@@ -344,13 +206,13 @@ export default function AdminStoresPage() {
             <span className="material-symbols-outlined text-[20px]">filter_list</span>
             Filter
           </button>
-          <button
-            onClick={() => setShowAddModal(true)}
+          <Link
+            href="/admin/stores/new"
             className="flex items-center gap-2 px-4 py-3 bg-[#1D4ED8] hover:bg-blue-700 text-white font-semibold text-sm rounded-lg transition"
           >
             <span className="material-symbols-outlined text-[20px]">add</span>
             Tambah Toko Baru
-          </button>
+          </Link>
         </div>
       </section>
 
@@ -435,13 +297,13 @@ export default function AdminStoresPage() {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => handleOpenEditModal(store.id)}
+                        <Link
+                          href={`/admin/stores/${store.id}/edit`}
                           className="p-2 hover:bg-surface-container text-[#3E3834] rounded transition"
                           title="Edit Toko"
                         >
                           <span className="material-symbols-outlined text-[20px]">edit</span>
-                        </button>
+                        </Link>
                         <button
                           onClick={() => handleDeleteStore(store.id, store.nama)}
                           className="p-2 hover:bg-error-container/30 text-error rounded transition"
@@ -484,218 +346,6 @@ export default function AdminStoresPage() {
           </div>
         ))}
       </div>
-
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-6 backdrop-blur-xs">
-          <div className="bg-white border border-[#EAE5E0] rounded-xl max-w-lg w-full overflow-hidden shadow-xl animate-scale-in">
-            <div className="px-6 py-4 border-b border-[#EAE5E0] flex justify-between items-center bg-[#F5F3F0]/50">
-              <h3 className="font-headline font-bold text-base text-[#1F1B18]">Tambah Toko Baru</h3>
-              <button onClick={handleCloseModal} className="text-[#8E8680] hover:text-[#1F1B18] transition">
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </div>
-
-            <form onSubmit={handleAddStoreSubmit} className="p-6 space-y-5 font-semibold text-xs text-[#5C5550]">
-              <div className="space-y-1.5">
-                <label className="block text-[11px] uppercase tracking-wider text-[#8E8680]">
-                  Nama Toko <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newStoreName}
-                  onChange={(e) => setNewStoreName(e.target.value)}
-                  placeholder="contoh: Griya Keramik Kasongan"
-                  className="w-full px-3.5 py-2.5 border border-[#D5CFC9] rounded-lg bg-[#F5F3F0] focus:outline-none focus:ring-1 focus:ring-[#1D4ED8] focus:border-[#1D4ED8] text-xs text-[#1F1B18]"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-[11px] uppercase tracking-wider text-[#8E8680]">
-                  Nama Pemilik Toko <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newStoreOwnerName}
-                  onChange={(e) => setNewStoreOwnerName(e.target.value)}
-                  placeholder="Nama lengkap pemilik toko"
-                  className="w-full px-3.5 py-2.5 border border-[#D5CFC9] rounded-lg bg-[#F5F3F0] focus:outline-none focus:ring-1 focus:ring-[#1D4ED8] focus:border-[#1D4ED8] text-xs text-[#1F1B18]"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-[11px] uppercase tracking-wider text-[#8E8680]">
-                  Logo Toko <span className="text-[#8E8680] font-normal normal-case">(opsional)</span>
-                </label>
-                {newStoreLogo && (
-                  <div className="flex items-center gap-3 p-3 bg-[#F5F3F0] rounded-lg border border-[#EAE5E0]">
-                    <div className="w-12 h-12 rounded-lg overflow-hidden border border-[#D5CFC9] flex-shrink-0">
-                      <img src={newStoreLogo} alt="Preview logo" className="w-full h-full object-cover" />
-                    </div>
-                    <button type="button" onClick={() => setNewStoreLogo("")} className="text-[#8E8680] hover:text-red-500 transition">
-                      <span className="material-symbols-outlined text-[18px]">close</span>
-                    </button>
-                  </div>
-                )}
-                <label className="flex items-center justify-center gap-2 w-full h-10 border-2 border-dashed border-[#D5CFC9] rounded-lg cursor-pointer hover:border-[#1D4ED8] hover:bg-blue-50/30 transition text-[#8E8680] hover:text-[#1D4ED8]">
-                  <span className="material-symbols-outlined text-[18px]">upload</span>
-                  <span className="text-xs font-semibold">
-                    {uploadProgress !== null && uploadProgress < 100 ? `Mengunggah... ${uploadProgress}%` : "Klik untuk upload gambar"}
-                  </span>
-                  <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
-                </label>
-              </div>
-
-              <p className="text-[10px] text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-                Toko baru akan langsung aktif setelah ditambahkan.
-              </p>
-
-              <div className="flex justify-end gap-3 pt-2 border-t border-[#EAE5E0]">
-                <button
-                  type="button"
-                  onClick={handleCloseModal}
-                  className="px-4 py-2 border border-[#D5CFC9] text-[#5C5550] hover:bg-[#F5F3F0] text-xs font-bold rounded-lg transition"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={isAddingStore}
-                  className="px-5 py-2 bg-[#1D4ED8] text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition flex items-center gap-1.5 disabled:opacity-60"
-                >
-                  <span className="material-symbols-outlined text-[16px]">add</span>
-                  {isAddingStore ? "Menyimpan..." : "Tambah Toko"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {showEditModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-6 backdrop-blur-xs">
-          <div className="bg-white border border-[#EAE5E0] rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-xl animate-scale-in">
-            <div className="px-6 py-4 border-b border-[#EAE5E0] flex justify-between items-center bg-[#F5F3F0]/50 sticky top-0">
-              <h3 className="font-headline font-bold text-base text-[#1F1B18]">Edit Toko</h3>
-              <button onClick={handleCloseEditModal} className="text-[#8E8680] hover:text-[#1F1B18] transition">
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </div>
-
-            <form onSubmit={handleEditStoreSubmit} className="p-6 space-y-5 font-semibold text-xs text-[#5C5550]">
-              <div className="space-y-1.5">
-                <label className="block text-[11px] uppercase tracking-wider text-[#8E8680]">
-                  Nama Toko <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editStoreName}
-                  onChange={(e) => setEditStoreName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 border border-[#D5CFC9] rounded-lg bg-[#F5F3F0] focus:outline-none focus:ring-1 focus:ring-[#1D4ED8] focus:border-[#1D4ED8] text-xs text-[#1F1B18]"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-[11px] uppercase tracking-wider text-[#8E8680]">
-                  Nama Pemilik <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editStoreOwnerName}
-                  onChange={(e) => setEditStoreOwnerName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 border border-[#D5CFC9] rounded-lg bg-[#F5F3F0] focus:outline-none focus:ring-1 focus:ring-[#1D4ED8] focus:border-[#1D4ED8] text-xs text-[#1F1B18]"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-[11px] uppercase tracking-wider text-[#8E8680]">Deskripsi</label>
-                <textarea
-                  value={editStoreDesc}
-                  onChange={(e) => setEditStoreDesc(e.target.value)}
-                  rows={3}
-                  className="w-full px-3.5 py-2.5 border border-[#D5CFC9] rounded-lg bg-[#F5F3F0] focus:outline-none focus:ring-1 focus:ring-[#1D4ED8] focus:border-[#1D4ED8] text-xs text-[#1F1B18] resize-none"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-[11px] uppercase tracking-wider text-[#8E8680]">Alamat</label>
-                <input
-                  type="text"
-                  value={editStoreAddr}
-                  onChange={(e) => setEditStoreAddr(e.target.value)}
-                  className="w-full px-3.5 py-2.5 border border-[#D5CFC9] rounded-lg bg-[#F5F3F0] focus:outline-none focus:ring-1 focus:ring-[#1D4ED8] focus:border-[#1D4ED8] text-xs text-[#1F1B18]"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-[11px] uppercase tracking-wider text-[#8E8680]">No. Telepon</label>
-                <input
-                  type="text"
-                  value={editStorePhone}
-                  onChange={(e) => setEditStorePhone(e.target.value)}
-                  className="w-full px-3.5 py-2.5 border border-[#D5CFC9] rounded-lg bg-[#F5F3F0] focus:outline-none focus:ring-1 focus:ring-[#1D4ED8] focus:border-[#1D4ED8] text-xs text-[#1F1B18]"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-[11px] uppercase tracking-wider text-[#8E8680]">Status Toko</label>
-                <select
-                  value={editStoreStatus}
-                  onChange={(e) => setEditStoreStatus(e.target.value as "Aktif" | "Nonaktif")}
-                  className="w-full px-3.5 py-2.5 border border-[#D5CFC9] rounded-lg bg-[#F5F3F0] focus:outline-none focus:ring-1 focus:ring-[#1D4ED8] focus:border-[#1D4ED8] text-xs text-[#1F1B18]"
-                >
-                  <option value="Aktif">Aktif</option>
-                  <option value="Nonaktif">Nonaktif</option>
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-[11px] uppercase tracking-wider text-[#8E8680]">Logo Toko</label>
-                {editStoreLogo && (
-                  <div className="flex items-center gap-3 p-3 bg-[#F5F3F0] rounded-lg border border-[#EAE5E0]">
-                    <div className="w-12 h-12 rounded-lg overflow-hidden border border-[#D5CFC9] flex-shrink-0">
-                      <img src={editStoreLogo} alt="Preview logo" className="w-full h-full object-cover" />
-                    </div>
-                    <button type="button" onClick={() => setEditStoreLogo("")} className="text-[#8E8680] hover:text-red-500 transition">
-                      <span className="material-symbols-outlined text-[18px]">close</span>
-                    </button>
-                  </div>
-                )}
-                <label className="flex items-center justify-center gap-2 w-full h-10 border-2 border-dashed border-[#D5CFC9] rounded-lg cursor-pointer hover:border-[#1D4ED8] hover:bg-blue-50/30 transition text-[#8E8680] hover:text-[#1D4ED8]">
-                  <span className="material-symbols-outlined text-[18px]">upload</span>
-                  <span className="text-xs font-semibold">
-                    {editUploadProgress !== null && editUploadProgress < 100
-                      ? `Mengunggah... ${editUploadProgress}%`
-                      : "Ganti logo"}
-                  </span>
-                  <input type="file" accept="image/*" className="hidden" onChange={handleEditLogoUpload} />
-                </label>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2 border-t border-[#EAE5E0]">
-                <button
-                  type="button"
-                  onClick={handleCloseEditModal}
-                  className="px-4 py-2 border border-[#D5CFC9] text-[#5C5550] hover:bg-[#F5F3F0] text-xs font-bold rounded-lg transition"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSavingEdit}
-                  className="px-5 py-2 bg-[#1D4ED8] text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition flex items-center gap-1.5 disabled:opacity-60"
-                >
-                  <span className="material-symbols-outlined text-[16px]">save</span>
-                  {isSavingEdit ? "Menyimpan..." : "Simpan Perubahan"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

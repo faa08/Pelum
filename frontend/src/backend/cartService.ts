@@ -1,3 +1,5 @@
+import { apiFetch } from "@/lib/api-client";
+
 export interface CartItem {
   id_cart_item: string;
   id_cart: string;
@@ -47,7 +49,7 @@ export const cartService = {
     }
 
     try {
-      const res = await fetch(`/api/cart?userId=${encodeURIComponent(userId)}`);
+      const res = await apiFetch(`/api/cart?userId=${encodeURIComponent(userId)}`);
       const data = await res.json();
       if (!res.ok) {
         logCartError("cartService.getCartItems failed", data);
@@ -64,7 +66,7 @@ export const cartService = {
     userId: string,
     productId: string,
     qty: number = 1,
-    options?: { setQty?: boolean }
+    options?: { setQty?: boolean; variantPicks?: number[] }
   ): Promise<AddToCartResult> {
     if (isPlaceholder()) {
       const stored = localStorage.getItem("pelum_cart_items");
@@ -88,7 +90,7 @@ export const cartService = {
     }
 
     try {
-      const res = await fetch("/api/cart", {
+      const res = await apiFetch("/api/cart", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -97,6 +99,7 @@ export const cartService = {
           productId,
           qty,
           setQty: options?.setQty ?? false,
+          variantPicks: options?.variantPicks,
         }),
       });
       const data = await res.json();
@@ -127,7 +130,7 @@ export const cartService = {
     }
 
     try {
-      const res = await fetch("/api/cart", {
+      const res = await apiFetch("/api/cart", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "update", cartItemId, qty }),
@@ -157,7 +160,7 @@ export const cartService = {
     }
 
     try {
-      const res = await fetch("/api/cart", {
+      const res = await apiFetch("/api/cart", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "remove", cartItemId }),
@@ -181,7 +184,7 @@ export const cartService = {
     }
 
     try {
-      const res = await fetch("/api/cart", {
+      const res = await apiFetch("/api/cart", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "clear", userId }),

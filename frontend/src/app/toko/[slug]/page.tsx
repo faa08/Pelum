@@ -231,6 +231,45 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
     p.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  if (loading) {
+    return (
+      <div className="min-h-screen flex flex-col bg-surface">
+        <Navbar />
+        <main className="flex-1 flex items-center justify-center">
+          <div className="text-center py-20">
+            <div className="w-10 h-10 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-sm text-secondary">Memuat data toko...</p>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (!seller) {
+    return (
+      <div className="min-h-screen flex flex-col bg-surface">
+        <Navbar />
+        <main className="flex-1 flex items-center justify-center">
+          <div className="text-center py-20 px-6">
+            <Store size={48} className="mx-auto mb-4 text-secondary opacity-40" />
+            <h1 className="font-headline text-xl font-bold text-on-surface mb-2">Toko Tidak Ditemukan</h1>
+            <p className="text-sm text-secondary mb-6 max-w-sm mx-auto">
+              Toko yang Anda cari tidak tersedia atau mungkin sudah tidak aktif.
+            </p>
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary text-white text-sm font-bold rounded-lg hover:opacity-90 transition"
+            >
+              Kembali ke Beranda
+            </Link>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-surface">
       <Navbar />

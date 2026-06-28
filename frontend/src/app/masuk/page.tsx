@@ -48,8 +48,9 @@ function LoginForm() {
 
   useEffect(() => {
     const err = searchParams.get("error");
-    if (err === "oauth_failed") setErrorMsg("Login Google gagal. Silakan coba lagi.");
-    if (err === "no_supabase") setErrorMsg("Login Google tidak tersedia pada mode lokal.");
+    if (err === "oauth_failed") setErrorMsg("Login gagal. Silakan coba lagi.");
+    if (err === "profile_sync_failed") setErrorMsg("Verifikasi berhasil tapi gagal sinkron profil. Coba masuk lagi.");
+    if (err === "no_supabase") setErrorMsg("Login tidak tersedia — Supabase belum dikonfigurasi.");
     const msg = searchParams.get("msg");
     if (msg === "please_login") setErrorMsg("Silakan login terlebih dahulu untuk mengakses halaman tersebut.");
     if (msg === "logged_out") setErrorMsg("Anda telah berhasil logout.");
@@ -83,9 +84,11 @@ function LoginForm() {
         }
       } else {
         if (!authService.isSupabaseConfigured()) {
-          setErrorMsg("Supabase belum dikonfigurasi. Buat file frontend/.env.local dari .env.local.example dan isi URL + API key Supabase Anda, lalu restart server.");
+          setErrorMsg("Supabase belum dikonfigurasi. Buat file frontend/.env.local dari .env.example dan isi URL + API key Supabase Anda, lalu restart server.");
         } else if (loginError === "not_found") {
           setErrorMsg("Email belum terdaftar. Daftar akun baru atau jalankan seed admin di Supabase SQL Editor.");
+        } else if (loginError === "email_not_confirmed") {
+          setErrorMsg("Email belum diverifikasi. Cek inbox Anda dan klik link konfirmasi dari Supabase.");
         } else if (loginError === "wrong_password") {
           setErrorMsg("Kata sandi salah. Periksa kembali password Anda.");
         } else if (loginError === "no_password") {
@@ -109,20 +112,9 @@ function LoginForm() {
 
       {/* ── Main Card ── */}
       <main style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "40px 24px" }}>
-        <div style={{
-          display: "flex",
-          width: "100%",
-          maxWidth: 900,
-          minHeight: 620,
-          borderRadius: 16,
-          overflow: "hidden",
-          boxShadow: "0 8px 40px rgba(0,0,0,0.10)",
-        }}>
-
+        <div className="auth-split-card">
           {/* ── Left Panel ── */}
-          <div style={{
-            width: 420,
-            flexShrink: 0,
+          <div className="auth-split-left" style={{
             background: C.primaryPale,
             padding: "40px 36px",
             display: "flex",
@@ -159,8 +151,7 @@ function LoginForm() {
           </div>
 
           {/* ── Right Panel ── */}
-          <div style={{
-            flex: 1,
+          <div className="auth-split-right" style={{
             background: "white",
             borderLeft: `1px solid ${C.border}`,
             padding: "48px 40px",

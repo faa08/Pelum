@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseAdmin } from "@/lib/supabase-admin";
+import { requireAuth, denyForeignUser } from "@/lib/api-auth";
 
 type CartRow = {
   id_cart_item: string;
   id_produk: string;
   qty_cartitem: number;
+  pilihan_varian?: { picks?: number[] } | null;
   produk: {
     id_produk: string;
     id_seller: string;
@@ -12,6 +13,7 @@ type CartRow = {
     harga: number;
     produk_stock: number;
     berat: number;
+    varian?: unknown;
     seller: { nm_store: string } | { nm_store: string }[];
   } | null;
 };
@@ -22,14 +24,19 @@ function normalizeSeller(produk: CartRow["produk"]) {
 }
 
 export async function POST(request: NextRequest) {
-  const { client: admin, error: configError } = createSupabaseAdmin();
-  if (!admin) {
-    return NextResponse.json({ error: configError || "Database admin tidak dikonfigurasi." }, { status: 503 });
-  }
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
+  const { ctx } = auth;
+  const { admin } = ctx;
 
   try {
     const body = await request.json();
-    const userId = String(body.userId || "");
+    const bodyUserId = String(body.userId || "");
+    const denied = denyForeignUser(ctx, bodyUserId);
+    if (denied) return denied;
+
+    const userId = ctx.user.id_user;
     const cartItemIds: string[] = body.cartItemIds || [];
     const addressId = body.addressId ? String(body.addressId) : null;
     const paymentType = body.paymentType === "offline" ? "offline" : "digital";
@@ -39,8 +46,8 @@ export async function POST(request: NextRequest) {
     const diskon = Number(body.diskon) || 0;
     const biayaLayanan = Number(body.biayaLayanan) || 0;
 
-    if (!userId || !cartItemIds.length) {
-      return NextResponse.json({ error: "User dan item keranjang wajib diisi." }, { status: 400 });
+    if (!cartItemIds.length) {
+      return NextResponse.json({ error: "Item keranjang wajib diisi." }, { status: 400 });
     }
     if (paymentType === "digital" && !addressId) {
       return NextResponse.json(
@@ -63,8 +70,8 @@ export async function POST(request: NextRequest) {
     const { data: cartItems, error: itemsErr } = await admin
       .from("cart_item")
       .select(
-        `id_cart_item, id_produk, qty_cartitem,
-        produk ( id_produk, id_seller, nama_produk, harga, produk_stock, berat, seller ( nm_store ) )`
+        `id_cart_item, id_produk, qty_cartitem, pilihan_varian,
+        produk ( id_produk, id_seller, nama_produk, harga, produk_stock, berat, varian, seller ( nm_store ) )`
       )
       .eq("id_cart", cart.id_cart)
       .in("id_cart_item", cartItemIds);
@@ -79,8 +86,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Produk tidak valid." }, { status: 400 });
     }
 
+    const { getStockForPicks, parseVariantRaw } = await import("@/lib/variantInventory");
     for (const item of validItems) {
-      const stock = Number(item.produk!.produk_stock);
+      const picks = item.pilihan_varian?.picks;
+      const { inventory } = parseVariantRaw(item.produk!.varian);
+      const stock =
+        picks?.length && inventory.length
+          ? getStockForPicks(inventory, picks, Number(item.produk!.produk_stock))
+          : Number(item.produk!.produk_stock);
       if (stock < item.qty_cartitem) {
         return NextResponse.json(
           { error: `Stok "${item.produk!.nama_produk}" tidak mencukupi (tersisa ${stock}).` },
@@ -137,6 +150,7 @@ export async function POST(request: NextRequest) {
         biaya_layanan: orderBiaya,
         stat_order: "pending",
         tipe_pembayaran: paymentType,
+        transaction_ref: transactionRef,
         catatan: paymentType === "offline" ? "Ambil di toko — bayar saat pickup" : null,
       });
       if (orderErr) throw orderErr;
@@ -147,6 +161,7 @@ export async function POST(request: NextRequest) {
         id_produk: i.id_produk,
         qty_orderitem: i.qty_cartitem,
         hrg_saat_beli: Number(i.produk!.harga),
+        pilihan_varian: i.pilihan_varian ?? null,
       }));
 
       const { error: oiErr } = await admin.from("order_item").insert(orderItems);
@@ -165,21 +180,9 @@ export async function POST(request: NextRequest) {
         id_pengiriman: crypto.randomUUID(),
         id_order,
         kurir: courier,
-        stat_kirim: paymentType === "offline" ? "belum_dikirim" : "belum_dikirim",
+        stat_kirim: "belum_dikirim",
       });
       if (shipErr) throw shipErr;
-
-      for (const item of items) {
-        const newStock = Number(item.produk!.produk_stock) - item.qty_cartitem;
-        const { error: stockErr } = await admin
-          .from("produk")
-          .update({
-            produk_stock: newStock,
-            stat_produk: newStock > 0 ? "tersedia" : "tidak tersedia",
-          })
-          .eq("id_produk", item.id_produk);
-        if (stockErr) throw stockErr;
-      }
 
       createdOrders.push({
         id_order,
@@ -201,7 +204,7 @@ export async function POST(request: NextRequest) {
         ? `${createdOrders.length} pesanan pickup dibuat. Datang ke toko untuk bayar & ambil.`
         : `${createdOrders.length} pesanan menunggu pembayaran digital.`;
 
-    const { error: notifErr } = await admin.from("notifikasi").insert({
+    await admin.from("notifikasi").insert({
       id_user: userId,
       judul: paymentType === "offline" ? "Pesanan Pickup" : "Pesanan Dibuat",
       pesan: notifMsg,
@@ -209,7 +212,6 @@ export async function POST(request: NextRequest) {
       link: "/account/orders",
       is_read: false,
     });
-    if (notifErr) console.warn("notifikasi insert skipped:", notifErr.message);
 
     return NextResponse.json({
       orders: createdOrders,

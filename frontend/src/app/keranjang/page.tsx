@@ -220,7 +220,7 @@ export default function CartPage() {
             </div>
           ) : (
             /* ── Main Grid ── */
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 24, alignItems: "start" }}>
+            <div className="cart-grid">
 
               {/* ── LEFT: Cart Items ── */}
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -444,7 +444,7 @@ export default function CartPage() {
 
                   <p style={{ fontSize: "0.75rem", color: C.textMuted, textAlign: "center", marginTop: 12, marginBottom: 0 }}>
                     Dengan melanjutkan, kamu menyetujui{" "}
-                    <Link href="#" style={{ color: C.primary, textDecoration: "none", fontWeight: 600 }}>Syarat &amp; Ketentuan</Link>
+                    <Link href="/bantuan/syarat-ketentuan" style={{ color: C.primary, textDecoration: "none", fontWeight: 600 }}>Syarat &amp; Ketentuan</Link>
                   </p>
                 </div>
 
@@ -477,7 +477,7 @@ export default function CartPage() {
                 Lihat Semua →
               </Link>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+            <div className="products-grid-reco">
               {recommended.map((p) => (
                 <Link key={p.id} href={`/produk/${p.slug}`} style={{
                   background: C.card, border: `1px solid ${C.border}`, borderRadius: 12,

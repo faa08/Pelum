@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseAdmin } from "@/lib/supabase-admin";
+import { requireAuth, denyForeignUser } from "@/lib/api-auth";
 
 export async function POST(request: NextRequest) {
-  const { client: admin, error: configError } = createSupabaseAdmin();
-  if (!admin) {
-    return NextResponse.json({ error: configError || "DB tidak dikonfigurasi." }, { status: 503 });
-  }
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
+  const admin = auth.ctx.admin;
 
   try {
     const body = await request.json();
-    const userId = String(body.userId || "");
+    const denied = denyForeignUser(auth.ctx, body.userId ? String(body.userId) : null);
+    if (denied) return denied;
+
+    const userId = auth.ctx.user.id_user;
     const orderItemId = String(body.orderItemId || "");
     const alasan = String(body.alasan || "").trim();
 
@@ -100,15 +103,15 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  const { client: admin, error: configError } = createSupabaseAdmin();
-  if (!admin) {
-    return NextResponse.json({ error: configError || "DB tidak dikonfigurasi." }, { status: 503 });
-  }
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
 
-  const userId = request.nextUrl.searchParams.get("userId");
-  if (!userId) {
-    return NextResponse.json({ error: "userId wajib." }, { status: 400 });
-  }
+  const queryUserId = request.nextUrl.searchParams.get("userId");
+  const denied = denyForeignUser(auth.ctx, queryUserId);
+  if (denied) return denied;
+
+  const admin = auth.ctx.admin;
+  const userId = auth.ctx.user.id_user;
 
   try {
     const { data, error } = await admin
@@ -117,7 +120,7 @@ export async function GET(request: NextRequest) {
         id_retur, alasan, status, created_at,
         order_item (
           id_order_item, qty_orderitem, hrg_saat_beli,
-          produk ( id_produk, nama_produk, img ),
+          produk ( id_produk, nama_produk, cover_img, img ),
           order ( id_order, stat_order, created_at, seller ( nm_store ) )
         )
       `)

@@ -4,70 +4,68 @@ import { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-
-const slides = [
-  {
-    image: "/hero-banner.png",
-    badge: "PROMO SPESIAL",
-    title1: "Karya Terbaik",
-    title2: "Dari Seluruh Indonesia",
-    subtitle: "Dapatkan diskon spesial untuk produk-produk kerajinan tangan otentik pilihan.",
-    btnText: "Lihat Promo",
-    link: "/promo",
-  },
-  {
-    image: "/hero-banner-2.png",
-    badge: "FASHION LOKAL",
-    title1: "Keindahan Batik",
-    title2: "& Tenun Nusantara",
-    subtitle: "Tampil elegan dengan koleksi busana tradisional modern hasil karya desainer lokal.",
-    btnText: "Jelajahi Koleksi",
-    link: "/kategori/fashion",
-  },
-  {
-    image: "/hero-banner-3.png",
-    badge: "KULINER NUSANTARA",
-    title1: "Cita Rasa Kopi",
-    title2: "& Kuliner Asli",
-    subtitle: "Rasakan kenikmatan kopi arabika premium dan camilan tradisional langsung dari petani.",
-    btnText: "Belanja Sekarang",
-    link: "/kategori/kuliner",
-  },
-];
+import {
+  fetchHomeHeroSlides,
+  type SiteBanner,
+} from "@/backend/bannerService";
 
 export default function HeroBanner() {
+  const [slides, setSlides] = useState<SiteBanner[]>([]);
   const [current, setCurrent] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
 
-  const nextSlide = useCallback(() => {
-    setCurrent((prev) => (prev === slides.length - 1 ? 0 : prev + 1));
+  useEffect(() => {
+    fetchHomeHeroSlides().then((rows) => setSlides(rows));
   }, []);
 
+  const nextSlide = useCallback(() => {
+    setCurrent((prev) => (slides.length <= 1 ? 0 : prev === slides.length - 1 ? 0 : prev + 1));
+  }, [slides.length]);
+
   const prevSlide = () => {
-    setCurrent((prev) => (prev === 0 ? slides.length - 1 : prev - 1));
+    setCurrent((prev) => (slides.length <= 1 ? 0 : prev === 0 ? slides.length - 1 : prev - 1));
   };
 
   useEffect(() => {
-    if (isHovered) return;
+    if (isHovered || slides.length <= 1) return;
     const interval = setInterval(nextSlide, 5000);
     return () => clearInterval(interval);
-  }, [isHovered, nextSlide]);
+  }, [isHovered, nextSlide, slides.length]);
+
+  useEffect(() => {
+    if (current >= slides.length && slides.length > 0) setCurrent(0);
+  }, [current, slides.length]);
+
+  if (!slides.length) {
+    return (
+      <section className="hero-section-container">
+        <div className="container">
+          <div
+            className="hero-banner-inner"
+            style={{ position: "relative", height: "380px", background: "#EAE5E0" }}
+          />
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="hero-section-container">
       <div className="container">
-        <div 
+        <div
           className="hero-banner-inner"
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
           style={{ position: "relative", height: "380px" }}
         >
-          {/* Slides */}
           {slides.map((slide, idx) => {
             const isActive = idx === current;
+            const imgSrc = slide.image_url || "/hero-banner.png";
+            const isExternal = imgSrc.startsWith("http");
+
             return (
-              <div 
-                key={idx} 
+              <div
+                key={slide.id_banner}
                 className={`hero-slide ${isActive ? "active" : ""}`}
                 style={{
                   position: "absolute",
@@ -78,17 +76,27 @@ export default function HeroBanner() {
                   pointerEvents: isActive ? "auto" : "none",
                 }}
               >
-                <Image
-                  src={slide.image}
-                  alt={slide.badge}
-                  fill
-                  priority={idx === 0}
-                  className="hero-img-custom"
-                  style={{ objectFit: "cover" }}
-                />
+                {isExternal ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={imgSrc}
+                    alt={slide.badge || "Banner"}
+                    className="hero-img-custom"
+                    style={{ objectFit: "cover", width: "100%", height: "100%", position: "absolute", inset: 0 }}
+                  />
+                ) : (
+                  <Image
+                    src={imgSrc}
+                    alt={slide.badge || "Banner"}
+                    fill
+                    priority={idx === 0}
+                    className="hero-img-custom"
+                    style={{ objectFit: "cover" }}
+                  />
+                )}
                 <div className="hero-overlay-custom" />
 
-                <div 
+                <div
                   className="hero-content-custom"
                   style={{
                     transform: isActive ? "translateY(0)" : "translateY(20px)",
@@ -101,50 +109,71 @@ export default function HeroBanner() {
                     gap: "12px",
                   }}
                 >
-                  <span className="hero-badge-custom">{slide.badge}</span>
+                  {slide.badge && <span className="hero-badge-custom">{slide.badge}</span>}
                   <h1 className="hero-title-custom" style={{ margin: 0 }}>
-                    {slide.title1}<br />{slide.title2}
+                    {slide.title_line1}
+                    {slide.title_line2 ? (
+                      <>
+                        <br />
+                        {slide.title_line2}
+                      </>
+                    ) : null}
                   </h1>
-                  {slide.subtitle && (
-                    <p className="hero-desc-custom" style={{ color: "rgba(255, 255, 255, 0.9)", fontSize: "0.875rem", maxWidth: "480px", margin: "4px 0 8px 0", lineHeight: "1.5" }}>
-                      {slide.subtitle}
+                  {slide.description && (
+                    <p
+                      className="hero-desc-custom"
+                      style={{
+                        color: "rgba(255, 255, 255, 0.9)",
+                        fontSize: "0.875rem",
+                        maxWidth: "480px",
+                        margin: "4px 0 8px 0",
+                        lineHeight: "1.5",
+                      }}
+                    >
+                      {slide.description}
                     </p>
                   )}
-                  <Link href={slide.link} className="hero-btn-custom">
-                    {slide.btnText}
-                  </Link>
+                  {slide.button_text && slide.button_link && (
+                    <Link href={slide.button_link} className="hero-btn-custom">
+                      {slide.button_text}
+                    </Link>
+                  )}
                 </div>
               </div>
             );
           })}
 
-          {/* Navigation Arrows */}
-          <button 
-            onClick={prevSlide} 
-            className="hero-nav-arrow prev"
-            aria-label="Previous slide"
-          >
-            <ChevronLeft size={20} />
-          </button>
-          <button 
-            onClick={nextSlide} 
-            className="hero-nav-arrow next"
-            aria-label="Next slide"
-          >
-            <ChevronRight size={20} />
-          </button>
-
-          {/* Indicators / Dots */}
-          <div className="hero-dots-container">
-            {slides.map((_, idx) => (
+          {slides.length > 1 && (
+            <>
               <button
-                key={idx}
-                onClick={() => setCurrent(idx)}
-                className={`hero-dot ${idx === current ? "active" : ""}`}
-                aria-label={`Go to slide ${idx + 1}`}
-              />
-            ))}
-          </div>
+                onClick={prevSlide}
+                className="hero-nav-arrow prev"
+                aria-label="Slide sebelumnya"
+                type="button"
+              >
+                <ChevronLeft size={20} />
+              </button>
+              <button
+                onClick={nextSlide}
+                className="hero-nav-arrow next"
+                aria-label="Slide berikutnya"
+                type="button"
+              >
+                <ChevronRight size={20} />
+              </button>
+              <div className="hero-dots-container">
+                {slides.map((slide, idx) => (
+                  <button
+                    key={slide.id_banner}
+                    type="button"
+                    onClick={() => setCurrent(idx)}
+                    className={`hero-dot ${idx === current ? "active" : ""}`}
+                    aria-label={`Ke slide ${idx + 1}`}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </section>

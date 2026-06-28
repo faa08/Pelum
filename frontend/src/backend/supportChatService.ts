@@ -1,4 +1,7 @@
-export interface SupportChatMessage {
+import type { ChatReceiptFields } from "@/lib/chatReadReceipts";
+import { apiFetch } from "@/lib/api-client";
+
+export interface SupportChatMessage extends ChatReceiptFields {
   id_message: string;
   id_chat: string;
   sender_role: "admin" | "customer";
@@ -16,7 +19,7 @@ export interface SupportChatRoom {
 
 export const supportChatService = {
   async ensureRoom(userId: string): Promise<string | null> {
-    const res = await fetch("/api/support-chat", {
+    const res = await apiFetch("/api/support-chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "ensure", userId }),
@@ -26,8 +29,15 @@ export const supportChatService = {
     return data.id_chat as string;
   },
 
-  async getMessages(chatId: string): Promise<SupportChatMessage[]> {
-    const res = await fetch(`/api/support-chat?chatId=${encodeURIComponent(chatId)}`);
+  async getMessages(
+    chatId: string,
+    viewerRole?: "admin" | "customer",
+    options?: { markRead?: boolean }
+  ): Promise<SupportChatMessage[]> {
+    const params = new URLSearchParams({ chatId });
+    if (viewerRole) params.set("viewerRole", viewerRole);
+    if (options?.markRead) params.set("markRead", "true");
+    const res = await apiFetch(`/api/support-chat?${params}`);
     const data = await res.json();
     if (!res.ok) return [];
     return data.messages || [];
@@ -39,16 +49,19 @@ export const supportChatService = {
     senderId: string | null,
     text: string
   ): Promise<boolean> {
-    const res = await fetch("/api/support-chat", {
+    const res = await apiFetch("/api/support-chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "send", chatId, senderRole, senderId, text }),
     });
+    if (res.ok && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("pelum-notif-refresh"));
+    }
     return res.ok;
   },
 
   async listRoomsForAdmin(): Promise<SupportChatRoom[]> {
-    const res = await fetch("/api/support-chat?list=admin");
+    const res = await apiFetch("/api/support-chat?list=admin");
     const data = await res.json();
     if (!res.ok) return [];
     return data.rooms || [];

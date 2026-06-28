@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseAdmin } from "@/lib/supabase-admin";
+import { requireAuth, denyForeignUser } from "@/lib/api-auth";
 
 function tableMissingMessage(err: { message?: string; code?: string }): string | null {
   const msg = (err.message || "").toLowerCase();
   if (
     err.code === "PGRST205" ||
     msg.includes("could not find") ||
-    msg.includes("ikut_toko") && msg.includes("schema")
+    (msg.includes("ikut_toko") && msg.includes("schema"))
   ) {
     return "Tabel pengikut toko belum dibuat. Jalankan bagian MIGRASI ikut_toko di db.sql pada Supabase SQL Editor, lalu coba lagi.";
   }
@@ -14,16 +14,20 @@ function tableMissingMessage(err: { message?: string; code?: string }): string |
 }
 
 export async function GET(request: NextRequest) {
-  const userId = request.nextUrl.searchParams.get("userId");
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
+  const queryUserId = request.nextUrl.searchParams.get("userId");
   const sellerId = request.nextUrl.searchParams.get("sellerId");
-  if (!userId || !sellerId) {
-    return NextResponse.json({ error: "userId dan sellerId wajib." }, { status: 400 });
+  const denied = denyForeignUser(auth.ctx, queryUserId);
+  if (denied) return denied;
+
+  if (!sellerId) {
+    return NextResponse.json({ error: "sellerId wajib." }, { status: 400 });
   }
 
-  const { client, error: adminError } = createSupabaseAdmin();
-  if (!client) {
-    return NextResponse.json({ error: adminError }, { status: 503 });
-  }
+  const client = auth.ctx.admin;
+  const userId = auth.ctx.user.id_user;
 
   const { data, error } = await client
     .from("ikut_toko")
@@ -42,6 +46,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
   let body: { userId?: string; sellerId?: string };
   try {
     body = await request.json();
@@ -49,27 +56,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Body JSON tidak valid." }, { status: 400 });
   }
 
-  const { userId, sellerId } = body;
-  if (!userId || !sellerId) {
-    return NextResponse.json({ error: "userId dan sellerId wajib." }, { status: 400 });
+  const denied = denyForeignUser(auth.ctx, body.userId ? String(body.userId) : null);
+  if (denied) return denied;
+
+  const sellerId = body.sellerId ? String(body.sellerId) : "";
+  if (!sellerId) {
+    return NextResponse.json({ error: "sellerId wajib." }, { status: 400 });
   }
 
-  const { client, error: adminError } = createSupabaseAdmin();
-  if (!client) {
-    return NextResponse.json({ error: adminError }, { status: 503 });
-  }
+  const client = auth.ctx.admin;
+  const userId = auth.ctx.user.id_user;
 
-  const [{ data: user }, { data: seller }] = await Promise.all([
-    client.from("users").select("id_user").eq("id_user", userId).maybeSingle(),
-    client.from("seller").select("id_seller").eq("id_seller", sellerId).maybeSingle(),
-  ]);
+  const { data: seller } = await client
+    .from("seller")
+    .select("id_seller")
+    .eq("id_seller", sellerId)
+    .maybeSingle();
 
-  if (!user) {
-    return NextResponse.json(
-      { error: "Akun tidak ditemukan di database. Silakan keluar lalu masuk kembali." },
-      { status: 404 }
-    );
-  }
   if (!seller) {
     return NextResponse.json({ error: "Toko tidak ditemukan." }, { status: 404 });
   }
@@ -89,16 +92,20 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const userId = request.nextUrl.searchParams.get("userId");
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
+  const queryUserId = request.nextUrl.searchParams.get("userId");
   const sellerId = request.nextUrl.searchParams.get("sellerId");
-  if (!userId || !sellerId) {
-    return NextResponse.json({ error: "userId dan sellerId wajib." }, { status: 400 });
+  const denied = denyForeignUser(auth.ctx, queryUserId);
+  if (denied) return denied;
+
+  if (!sellerId) {
+    return NextResponse.json({ error: "sellerId wajib." }, { status: 400 });
   }
 
-  const { client, error: adminError } = createSupabaseAdmin();
-  if (!client) {
-    return NextResponse.json({ error: adminError }, { status: 503 });
-  }
+  const client = auth.ctx.admin;
+  const userId = auth.ctx.user.id_user;
 
   const { error } = await client
     .from("ikut_toko")

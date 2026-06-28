@@ -23,7 +23,7 @@ export default function FeaturedProducts({ searchQuery = "" }: FeaturedProductsP
   useEffect(() => {
     async function loadProducts() {
       try {
-        const data = await productService.getProducts({ publicOnly: true, limit: 10 });
+        const data = await productService.getProducts({ publicOnly: true, limit: 10, hydrateImages: 10 });
         setProducts(
           data.map((p) => ({
             ...productToCard(p),

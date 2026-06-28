@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { Package, Truck, CheckCircle2, X, MapPin, AlertCircle, MessageCircle } from "lucide-react";
+import { Package, Truck, CheckCircle2, X, MapPin, AlertCircle, MessageCircle, Store } from "lucide-react";
 import Link from "next/link";
 import { adminService, type AdminShipmentOrder, type AdminShipStatus } from "@/backend/adminService";
 import { shippingService } from "@/backend/shippingService";
@@ -19,6 +19,7 @@ export default function AdminPengirimanPage() {
   const [resi, setResi] = useState("");
   const [eta, setEta] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [confirmingPickup, setConfirmingPickup] = useState<string | null>(null);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -63,6 +64,23 @@ export default function AdminPengirimanPage() {
       alert("Gagal menyimpan resi. Coba lagi.");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleConfirmPickup(order: AdminShipmentOrder) {
+    const ok = window.confirm(
+      `Konfirmasi pesanan pickup dari ${order.buyer} sudah diambil & dibayar di toko?`
+    );
+    if (!ok) return;
+
+    setConfirmingPickup(order.uuid);
+    const result = await adminService.confirmPickupOrder(order.uuid);
+    setConfirmingPickup(null);
+
+    if (result.ok) {
+      await fetchOrders();
+    } else {
+      alert(result.error || "Gagal mengonfirmasi pickup.");
     }
   }
 
@@ -199,9 +217,15 @@ export default function AdminPengirimanPage() {
                 </div>
                 <div className="flex-shrink-0">
                   {order.status === "Perlu Dikirim" && order.paymentKind === "pickup" && (
-                    <span className="px-3 py-1.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-xs font-bold">
-                      Pickup — tunggu pelanggan ambil & bayar di toko
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleConfirmPickup(order)}
+                      disabled={confirmingPickup === order.uuid}
+                      className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white font-bold text-xs rounded-lg hover:bg-amber-700 transition disabled:opacity-60"
+                    >
+                      <Store size={14} />
+                      {confirmingPickup === order.uuid ? "Memproses..." : "Konfirmasi Diambil"}
+                    </button>
                   )}
                   {order.status === "Perlu Dikirim" && order.paymentKind === "digital" && (
                     <div className="flex flex-col gap-2 items-end">

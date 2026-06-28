@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseAdmin } from "@/lib/supabase-admin";
-import { setupShippingChatAfterDigitalPay } from "@/lib/shippingChatSetup";
+import { requireAuth, verifyOrderOwnership } from "@/lib/api-auth";
+import { completeCheckoutPayment } from "@/lib/completeCheckoutPayment";
+
+function allowClientDigitalComplete(): boolean {
+  if (process.env.ALLOW_PAYMENT_SIMULATOR === "true") return true;
+  return process.env.NODE_ENV !== "production";
+}
 
 export async function POST(request: NextRequest) {
-  const { client: admin, error: configError } = createSupabaseAdmin();
-  if (!admin) {
-    return NextResponse.json({ error: configError || "Database admin tidak dikonfigurasi." }, { status: 503 });
-  }
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
 
   try {
     const { orderIds, success = true, createChat = false, paymentType } = await request.json();
@@ -14,49 +17,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "orderIds wajib diisi." }, { status: 400 });
     }
 
+    const ownership = await verifyOrderOwnership(auth.ctx.admin, orderIds, auth.ctx.user.id_user);
+    if (!ownership.ok) return ownership.response;
+
     const isOffline = paymentType === "offline";
-    const orderStatus = success ? "diproses" : "dibatalkan";
-    const payStatus = success ? (isOffline ? "pending" : "success") : "failed";
-    const now = new Date().toISOString();
-    const chatIds: string[] = [];
+    const isDigital = paymentType === "digital" || (!isOffline && paymentType !== "offline");
 
-    for (const id_order of orderIds) {
-      const { error: payErr } = await admin
-        .from("payment")
-        .update({ stat_pay: payStatus, tgl_pay: success && !isOffline ? now : null })
-        .eq("id_order", id_order);
-      if (payErr) throw payErr;
-
-      const { error: orderErr } = await admin
-        .from("order")
-        .update({ stat_order: orderStatus })
-        .eq("id_order", id_order);
-      if (orderErr) throw orderErr;
-
-      if (success && !isOffline && (createChat || paymentType === "digital")) {
-        const chatId = await setupShippingChatAfterDigitalPay(admin, id_order);
-        if (chatId) chatIds.push(chatId);
-      }
-
-      if (success && isOffline) {
-        const { data: order } = await admin
-          .from("order")
-          .select("id_user")
-          .eq("id_order", id_order)
-          .maybeSingle();
-        if (order?.id_user) {
-          await admin.from("notifikasi").insert({
-            id_user: order.id_user,
-            judul: "Pesanan Pickup Dikonfirmasi",
-            pesan: "Pesanan pickup Anda siap. Datang ke toko kami untuk bayar dan ambil barang.",
-            tipe: "order",
-            link: "/account/orders",
-            id_order,
-            is_read: false,
-          });
-        }
-      }
+    if (isDigital && success && !allowClientDigitalComplete()) {
+      return NextResponse.json(
+        {
+          error:
+            "Konfirmasi pembayaran digital hanya melalui Midtrans. Cek status di Pesanan Saya.",
+        },
+        { status: 403 }
+      );
     }
+
+    const { chatIds } = await completeCheckoutPayment(auth.ctx.admin, orderIds, {
+      success,
+      createChat,
+      paymentType: isOffline ? "offline" : "digital",
+    });
 
     return NextResponse.json({ ok: true, chatIds });
   } catch (err: unknown) {

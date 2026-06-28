@@ -1,11 +1,13 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ArrowLeft, Headphones } from "lucide-react";
 import Footer from "@/components/Footer";
 import { useCustomerService } from "@/components/CustomerServiceProvider";
+import { authService, USER_UPDATED_EVENT } from "@/backend/authService";
+import { resolveAvatarUrl } from "@/lib/avatar";
 
 const NAV_ITEMS = [
   { label: "Pusat Bantuan", href: "/bantuan" },
@@ -24,6 +26,20 @@ export default function HelpCenterLayout({
 }) {
   const pathname = usePathname();
   const { open: openCustomerService } = useCustomerService();
+  const [currentUser, setCurrentUser] = useState<ReturnType<typeof authService.getCurrentUser>>(null);
+
+  useEffect(() => {
+    const syncUser = () => setCurrentUser(authService.getCurrentUser());
+    syncUser();
+    window.addEventListener("storage", syncUser);
+    window.addEventListener(USER_UPDATED_EVENT, syncUser);
+    return () => {
+      window.removeEventListener("storage", syncUser);
+      window.removeEventListener(USER_UPDATED_EVENT, syncUser);
+    };
+  }, []);
+
+  const headerName = currentUser?.nama_lengkap || currentUser?.username;
 
   return (
     <div className="min-h-screen flex flex-col bg-surface">
@@ -58,10 +74,22 @@ export default function HelpCenterLayout({
               <Headphones size={15} />
               Customer Service
             </button>
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-700 to-blue-950 flex items-center justify-center text-white text-xs font-bold border border-[#EAE5E0]">
-              G
-            </div>
-            <span className="text-xs font-bold text-on-surface hidden sm:inline">game</span>
+            {currentUser && (
+              <>
+                <div className="w-8 h-8 rounded-full overflow-hidden border border-[#EAE5E0] bg-[#E8E8E8] flex items-center justify-center shrink-0">
+                  <img
+                    src={resolveAvatarUrl(currentUser.avatar)}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                {headerName && (
+                  <span className="text-xs font-bold text-on-surface hidden sm:inline truncate max-w-[120px]">
+                    {headerName}
+                  </span>
+                )}
+              </>
+            )}
           </div>
         </div>
       </header>

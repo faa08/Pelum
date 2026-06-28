@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { productService } from "./productService";
+import { apiFetch } from "@/lib/api-client";
 
 export interface UpdateSellerInput {
   nm_store?: string;
@@ -285,6 +286,45 @@ export const sellerService = {
     }
   },
 
+  async searchStores(query: string, limit = 5): Promise<(Seller & { slug: string })[]> {
+    const q = query.trim();
+    if (!q) return [];
+
+    if (isPlaceholder()) {
+      const stored = localStorage.getItem("pelum_sellers");
+      const sellers: Seller[] = stored ? JSON.parse(stored) : [];
+      const lower = q.toLowerCase();
+      return sellers
+        .filter(
+          (s) =>
+            s.nm_store?.toLowerCase().includes(lower) ||
+            (s.deskripsi && s.deskripsi.toLowerCase().includes(lower))
+        )
+        .slice(0, limit)
+        .map((s) => ({ ...s, slug: storeNameToSlug(s.nm_store) }));
+    }
+
+    try {
+      const pattern = `%${q.replace(/[%_\\]/g, "\\$&")}%`;
+      const { data, error } = await supabase
+        .from("seller")
+        .select(`*, users(nama_lengkap)`)
+        .eq("is_verified", true)
+        .or(`nm_store.ilike.${pattern},deskripsi.ilike.${pattern}`)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+
+      if (error) throw error;
+      return (data || []).map((s) => ({
+        ...(s as Seller),
+        slug: storeNameToSlug((s as Seller).nm_store),
+      }));
+    } catch (err) {
+      console.error("sellerService.searchStores failed:", err);
+      return [];
+    }
+  },
+
   // Get seller by ID or slug/name
   async getSellerByIdOrSlug(idOrSlug: string): Promise<Seller | null> {
     console.log("Calling sellerService.getSellerByIdOrSlug:", idOrSlug);
@@ -292,21 +332,67 @@ export const sellerService = {
     if (isPlaceholder()) {
       const stored = localStorage.getItem("pelum_sellers");
       const sellers = stored ? JSON.parse(stored) : [];
-      return sellers.find((s: any) => s.id_seller === idOrSlug || s.nm_store?.toLowerCase().replace(/\s+/g, "-") === idOrSlug) || null;
+      return (
+        sellers.find(
+          (s: any) =>
+            s.id_seller === idOrSlug ||
+            storeNameToSlug(s.nm_store || "") === idOrSlug
+        ) || null
+      );
     }
 
     try {
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrSlug);
-      let query = supabase.from("seller").select("*");
+
       if (isUuid) {
-        query = query.eq("id_seller", idOrSlug);
-      } else {
-        query = query.ilike("nm_store", `%${idOrSlug.replace(/-/g, " ")}%`);
+        const { data, error } = await supabase
+          .from("seller")
+          .select("*")
+          .eq("id_seller", idOrSlug)
+          .maybeSingle();
+        if (error) throw error;
+        return data;
       }
-      
-      const { data, error } = await query.limit(1).maybeSingle();
-      if (error) throw error;
-      return data;
+
+      // Slug lookup strategy:
+      // storeNameToSlug() is a lossy function (strips non-word chars, lowercases, etc.)
+      // so we cannot reliably reverse it via SQL. Instead, fetch all sellers and
+      // compare slugs client-side using the same function.
+      const { data: allSellers, error } = await supabase
+        .from("seller")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("getSellerByIdOrSlug: failed to fetch sellers:", error.message);
+        throw error;
+      }
+
+      if (!allSellers || allSellers.length === 0) {
+        console.warn("getSellerByIdOrSlug: no sellers found in database");
+        return null;
+      }
+
+      // Find exact slug match
+      const match = allSellers.find(
+        (s) => storeNameToSlug(s.nm_store || "") === idOrSlug
+      );
+
+      if (match) return match;
+
+      // Fallback: try partial name match (handles edge cases)
+      const slugLower = idOrSlug.toLowerCase();
+      const partialMatch = allSellers.find(
+        (s) => (s.nm_store || "").toLowerCase().replace(/\s+/g, "-") === slugLower
+      );
+
+      if (partialMatch) return partialMatch;
+
+      console.warn(
+        `getSellerByIdOrSlug: no seller matched slug "${idOrSlug}". ` +
+        `Available slugs: ${allSellers.map((s) => storeNameToSlug(s.nm_store || "")).join(", ")}`
+      );
+      return null;
     } catch (err) {
       console.error("sellerService.getSellerByIdOrSlug failed:", err);
       return null;
@@ -404,7 +490,7 @@ export const sellerService = {
       console.warn("createStore direct failed, trying API:", directMsg);
 
       try {
-        const apiRes = await fetch("/api/admin/stores", {
+        const apiRes = await apiFetch("/api/admin/stores", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -620,7 +706,7 @@ export const sellerService = {
     }
 
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/toko/follow?userId=${encodeURIComponent(userId)}&sellerId=${encodeURIComponent(sellerId)}`
       );
       const data = await res.json();
@@ -643,7 +729,7 @@ export const sellerService = {
     }
 
     try {
-      const res = await fetch("/api/toko/follow", {
+      const res = await apiFetch("/api/toko/follow", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, sellerId }),
@@ -670,7 +756,7 @@ export const sellerService = {
     }
 
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/toko/follow?userId=${encodeURIComponent(userId)}&sellerId=${encodeURIComponent(sellerId)}`,
         { method: "DELETE" }
       );

@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseAdmin } from "@/lib/supabase-admin";
+import { requireAuth, denyForeignUser } from "@/lib/api-auth";
 
 export async function POST(request: NextRequest) {
-  const { client: admin, error: configError } = createSupabaseAdmin();
-  if (!admin) {
-    return NextResponse.json({ error: configError || "DB tidak dikonfigurasi." }, { status: 503 });
-  }
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
+  const admin = auth.ctx.admin;
 
   try {
-    const { orderId, userId } = await request.json();
-    if (!orderId || !userId) {
-      return NextResponse.json({ error: "orderId dan userId wajib." }, { status: 400 });
+    const body = await request.json();
+    const denied = denyForeignUser(auth.ctx, body.userId ? String(body.userId) : null);
+    if (denied) return denied;
+
+    const userId = auth.ctx.user.id_user;
+    const orderId = String(body.orderId || "");
+    if (!orderId) {
+      return NextResponse.json({ error: "orderId wajib." }, { status: 400 });
     }
 
     const { data: order, error: orderErr } = await admin

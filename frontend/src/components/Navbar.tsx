@@ -19,9 +19,11 @@ import {
   Headphones,
   Package,
 } from "lucide-react";
-import { authService } from "@/backend/authService";
+import { authService, USER_UPDATED_EVENT } from "@/backend/authService";
+import { resolveAvatarUrl } from "@/lib/avatar";
 import { useCustomerService } from "@/components/CustomerServiceProvider";
 import { useNotifications } from "@/hooks/useNotifications";
+import { useLogoutConfirm } from "@/hooks/useLogoutConfirm";
 import type { NotificationItem } from "@/backend/notificationService";
 
 type Notification = NotificationItem;
@@ -37,6 +39,8 @@ export default function Navbar({ searchQuery, setSearchQuery, hideCartAndChat = 
     handleMarkAllRead,
     handleClearAll,
     handleToggleRead,
+    handleOpen,
+    refresh,
   } = useNotifications();
   const [isMobile, setIsMobile] = useState(false);
   const [currentUser, setCurrentUser] = useState<ReturnType<typeof authService.getCurrentUser>>(null);
@@ -53,10 +57,14 @@ export default function Navbar({ searchQuery, setSearchQuery, hideCartAndChat = 
 
   // Sync current user on mount and on storage changes (login/logout in other tabs)
   useEffect(() => {
-    setCurrentUser(authService.getCurrentUser());
-    const handleStorage = () => setCurrentUser(authService.getCurrentUser());
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
+    const syncUser = () => setCurrentUser(authService.getCurrentUser());
+    syncUser();
+    window.addEventListener("storage", syncUser);
+    window.addEventListener(USER_UPDATED_EVENT, syncUser);
+    return () => {
+      window.removeEventListener("storage", syncUser);
+      window.removeEventListener(USER_UPDATED_EVENT, syncUser);
+    };
   }, []);
 
   useEffect(() => {
@@ -77,12 +85,12 @@ export default function Navbar({ searchQuery, setSearchQuery, hideCartAndChat = 
     };
   }, [isOpen, isProfileOpen]);
 
-  const handleLogout = () => {
-    authService.logout();
-    setCurrentUser(null);
-    setIsProfileOpen(false);
-    router.push("/");
-  };
+  const { requestLogout, LogoutConfirmDialog } = useLogoutConfirm({
+    onBeforeLogout: () => {
+      setIsProfileOpen(false);
+      setCurrentUser(null);
+    },
+  });
 
   const renderNotifIcon = (type: Notification["type"]) => {
     switch (type) {
@@ -115,7 +123,7 @@ export default function Navbar({ searchQuery, setSearchQuery, hideCartAndChat = 
             <>
               <Link href="/keranjang" className="nav-cart-btn" id="cart-btn">
                 <ShoppingCart size={18} className="nav-icon-orange" />
-                <span>Keranjang</span>
+                <span className="nav-text-hide-sm">Keranjang</span>
               </Link>
 
               <button
@@ -126,7 +134,7 @@ export default function Navbar({ searchQuery, setSearchQuery, hideCartAndChat = 
                 title="Customer Service"
               >
                 <Headphones size={18} className="nav-icon-orange" />
-                <span>Bantuan</span>
+                <span className="nav-text-hide-sm">Bantuan</span>
               </button>
             </>
           )}
@@ -137,7 +145,10 @@ export default function Navbar({ searchQuery, setSearchQuery, hideCartAndChat = 
               className="nav-bell-btn" 
               id="notif-btn" 
               title="Notifikasi"
-              onClick={() => setIsOpen(!isOpen)}
+              onClick={() => {
+                if (!isOpen) refresh();
+                setIsOpen(!isOpen);
+              }}
               aria-expanded={isOpen}
             >
               <Bell size={18} className="nav-icon-orange" />
@@ -178,7 +189,12 @@ export default function Navbar({ searchQuery, setSearchQuery, hideCartAndChat = 
                       <div
                         key={notif.id}
                         className={`notif-item ${notif.unread ? "unread" : ""}`}
-                        onClick={() => handleToggleRead(notif.id)}
+                        onClick={async () => {
+                          const link = await handleOpen(notif);
+                          setIsOpen(false);
+                          if (link) router.push(link);
+                        }}
+                        style={{ cursor: notif.link ? "pointer" : "default" }}
                       >
                         <div className={`notif-icon-box ${notif.type}`}>
                           {renderNotifIcon(notif.type)}
@@ -216,13 +232,7 @@ export default function Navbar({ searchQuery, setSearchQuery, hideCartAndChat = 
                 onClick={() => setIsProfileOpen(!isProfileOpen)}
                 aria-expanded={isProfileOpen}
               >
-                {currentUser.avatar ? (
-                  <img src={currentUser.avatar} alt="avatar" className="w-8 h-8 shrink-0 rounded-full object-cover border border-surface-container" />
-                ) : (
-                  <div className="w-8 h-8 shrink-0 rounded-full bg-primary flex items-center justify-center text-white text-sm font-bold">
-                    {(currentUser.nama_lengkap || currentUser.username || "U").charAt(0).toUpperCase()}
-                  </div>
-                )}
+                <img src={resolveAvatarUrl(currentUser.avatar)} alt="avatar" className="w-8 h-8 shrink-0 rounded-full object-cover border border-surface-container bg-[#E8E8E8]" />
                 <span className="text-sm font-semibold text-on-surface hidden sm:block max-w-[120px] truncate">
                   {currentUser.nama_lengkap || currentUser.username}
                 </span>
@@ -233,13 +243,7 @@ export default function Navbar({ searchQuery, setSearchQuery, hideCartAndChat = 
                   {/* Profile Info Header */}
                   <div className="flex items-center justify-between pb-3 mb-2 border-b border-gray-100 px-1">
                     <div className="flex items-center gap-3">
-                      {currentUser.avatar ? (
-                        <img src={currentUser.avatar} alt="avatar" className="w-10 h-10 shrink-0 rounded-full object-cover" />
-                      ) : (
-                        <div className="w-10 h-10 shrink-0 rounded-full bg-primary flex items-center justify-center text-white text-lg font-bold">
-                          {(currentUser.nama_lengkap || currentUser.username || "U").charAt(0).toUpperCase()}
-                        </div>
-                      )}
+                      <img src={resolveAvatarUrl(currentUser.avatar)} alt="avatar" className="w-10 h-10 shrink-0 rounded-full object-cover bg-[#E8E8E8]" />
                       <div className="flex flex-col text-left">
                         <span className="text-sm font-bold leading-tight">{currentUser.nama_lengkap || currentUser.username}</span>
                         <span className="text-[11px] text-gray-400">@{currentUser.username}</span>
@@ -285,7 +289,7 @@ export default function Navbar({ searchQuery, setSearchQuery, hideCartAndChat = 
 
 
                     <button
-                      onClick={handleLogout}
+                      onClick={requestLogout}
                       className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors text-left w-full mt-1 border-t border-gray-100 pt-3"
                     >
                       <LogOut className="w-4 h-4 text-red-500" />
@@ -312,10 +316,10 @@ export default function Navbar({ searchQuery, setSearchQuery, hideCartAndChat = 
       {isProfileOpen && isMobile && currentUser && (
         <div className="md:hidden">
           <div 
-            className="fixed inset-0 bg-[#1F1B18]/40 backdrop-blur-xs z-[1000] animate-fade-in"
+            className="fixed inset-0 bg-[#1F1B18]/40 backdrop-blur-xs z-[10050] animate-fade-in"
             onClick={() => setIsProfileOpen(false)}
           />
-          <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[24px] border-t border-[#EAE5E0] shadow-2xl z-[1010] px-6 pb-8 pt-3 text-[#1F1B18] animate-slide-up normal-case tracking-normal flex flex-col">
+          <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-[24px] border-t border-[#EAE5E0] shadow-2xl z-[10051] px-6 pb-8 pt-3 text-[#1F1B18] animate-slide-up normal-case tracking-normal flex flex-col">
             {/* Handlebar */}
             <div 
               className="w-12 h-1.5 bg-[#EAE5E0] rounded-full mx-auto mb-5 cursor-pointer"
@@ -325,13 +329,7 @@ export default function Navbar({ searchQuery, setSearchQuery, hideCartAndChat = 
             {/* Profile Info Header */}
             <div className="flex items-center justify-between pb-4 mb-4 border-b border-[#F5F3F0]">
               <div className="flex items-center gap-3">
-                {currentUser.avatar ? (
-                  <img src={currentUser.avatar} alt="avatar" className="w-11 h-11 shrink-0 rounded-full object-cover border border-[#EAE5E0]" />
-                ) : (
-                  <div className="w-11 h-11 shrink-0 rounded-full bg-primary flex items-center justify-center text-white text-base font-bold">
-                    {(currentUser.nama_lengkap || currentUser.username || "U").charAt(0).toUpperCase()}
-                  </div>
-                )}
+                <img src={resolveAvatarUrl(currentUser.avatar)} alt="avatar" className="w-11 h-11 shrink-0 rounded-full object-cover border border-[#EAE5E0] bg-[#E8E8E8]" />
                 <div className="flex flex-col text-left">
                   <span className="text-base font-bold leading-tight text-[#1F1B18]">{currentUser.nama_lengkap || currentUser.username}</span>
                   <span className="text-xs text-[#8E8680]">@{currentUser.username}</span>
@@ -377,7 +375,8 @@ export default function Navbar({ searchQuery, setSearchQuery, hideCartAndChat = 
 
 
               <button
-                onClick={handleLogout}
+                type="button"
+                onClick={requestLogout}
                 className="flex items-center gap-4 px-4 py-3.5 rounded-xl text-sm font-bold text-red-600 hover:bg-red-50 transition-colors text-left w-full mt-2 border border-red-100 bg-red-50/20"
               >
                 <LogOut className="w-5 h-5 text-red-500" />
@@ -387,6 +386,7 @@ export default function Navbar({ searchQuery, setSearchQuery, hideCartAndChat = 
           </div>
         </div>
       )}
+      <LogoutConfirmDialog />
     </header>
   );
 }

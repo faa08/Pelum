@@ -3,17 +3,26 @@
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Star, Loader2, X } from "lucide-react";
+import { Star, Loader2, X, MapPin } from "lucide-react";
 import { authService } from "@/backend/authService";
 import { supabase } from "@/backend/supabase";
 import { returnService, ReturnItem } from "@/backend/returnService";
 import { RETURN_EVIDENCE_GUIDE, RETURN_EVIDENCE_NOTE } from "@/lib/returnConstants";
+import { parseProductImg } from "@/lib/productUi";
+import { PICKUP_STORE_MAPS_URL } from "@/lib/checkoutConstants";
+
+type OrderProduk = {
+  id_produk: string;
+  nama_produk: string;
+  cover_img?: string | null;
+  img?: string | null;
+};
 
 type OrderItem = {
   id_order_item: string;
   qty_orderitem: number;
   hrg_saat_beli: number;
-  produk: { id_produk: string; nama_produk: string; cover_img?: string | null; img?: string | null } | null;
+  produk: OrderProduk | null;
 };
 
 type Order = {
@@ -49,23 +58,64 @@ const isPlaceholder = () =>
   !process.env.NEXT_PUBLIC_SUPABASE_URL ||
   process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder");
 
-function parseProductImg(img?: string | null): string {
-  if (!img) return "/product-keramik.png";
-  if (img.startsWith("[")) {
-    try {
-      const arr = JSON.parse(img);
-      return arr[0] || "/product-keramik.png";
-    } catch {
-      return "/product-keramik.png";
-    }
-  }
-  return img;
+function normalizeProduk(raw: unknown): OrderProduk | null {
+  if (!raw) return null;
+  const p = Array.isArray(raw) ? raw[0] : raw;
+  if (!p || typeof p !== "object") return null;
+  return p as OrderProduk;
+}
+
+function getProductImageSrc(produk: OrderProduk | null | undefined): string {
+  if (!produk) return "/product-keramik.png";
+  if (produk.cover_img?.trim()) return parseProductImg(produk.cover_img);
+  if (produk.img?.trim()) return parseProductImg(produk.img);
+  return "/product-keramik.png";
 }
 
 function normalizePengiriman(raw: unknown): Order["pengiriman"] {
   if (!raw) return null;
   if (Array.isArray(raw)) return raw[0] ?? null;
   return raw as Order["pengiriman"];
+}
+
+async function hydrateOrderImages(orders: Order[]): Promise<Order[]> {
+  const idsNeedingImg = new Set<string>();
+  for (const ord of orders) {
+    for (const item of ord.items) {
+      const p = item.produk;
+      if (!p?.id_produk) continue;
+      if (getProductImageSrc(p) === "/product-keramik.png") {
+        idsNeedingImg.add(p.id_produk);
+      }
+    }
+  }
+  if (idsNeedingImg.size === 0) return orders;
+
+  const { data } = await supabase
+    .from("produk")
+    .select("id_produk, cover_img, img")
+    .in("id_produk", [...idsNeedingImg]);
+
+  if (!data?.length) return orders;
+  const byId = new Map(data.map((r) => [r.id_produk as string, r as OrderProduk]));
+
+  return orders.map((ord) => ({
+    ...ord,
+    items: ord.items.map((item) => {
+      const p = item.produk;
+      if (!p?.id_produk || getProductImageSrc(p) !== "/product-keramik.png") return item;
+      const row = byId.get(p.id_produk);
+      if (!row) return item;
+      return {
+        ...item,
+        produk: {
+          ...p,
+          cover_img: p.cover_img ?? row.cover_img,
+          img: p.img ?? row.img,
+        },
+      };
+    }),
+  }));
 }
 
 export default function CustomerOrdersPage() {
@@ -115,7 +165,7 @@ export default function CustomerOrdersPage() {
           seller ( nm_store ),
           order_item (
             id_order_item, qty_orderitem, hrg_saat_beli,
-            produk ( id_produk, nama_produk, cover_img )
+            produk ( id_produk, nama_produk, cover_img, img )
           ),
           pengiriman ( kurir, no_resi, stat_kirim )
         `)
@@ -127,15 +177,25 @@ export default function CustomerOrdersPage() {
     if (ordersRes.error) {
       console.error("Gagal memuat pesanan:", ordersRes.error.message);
     } else if (ordersRes.data) {
-      const mapped = ordersRes.data.map((o: Record<string, unknown>) => ({
-        ...o,
-        items: (o.order_item as OrderItem[]) || [],
-        pengiriman: normalizePengiriman(o.pengiriman),
-        seller: Array.isArray(o.seller) ? o.seller[0] : o.seller,
-      })) as Order[];
-      setOrders(mapped);
+      const mapped = ordersRes.data.map((o: Record<string, unknown>) => {
+        const rawItems = (o.order_item as Record<string, unknown>[]) || [];
+        const items: OrderItem[] = rawItems.map((item) => ({
+          id_order_item: item.id_order_item as string,
+          qty_orderitem: item.qty_orderitem as number,
+          hrg_saat_beli: item.hrg_saat_beli as number,
+          produk: normalizeProduk(item.produk),
+        }));
+        return {
+          ...o,
+          items,
+          pengiriman: normalizePengiriman(o.pengiriman),
+          seller: Array.isArray(o.seller) ? o.seller[0] : o.seller,
+        };
+      }) as Order[];
+      const hydrated = await hydrateOrderImages(mapped);
+      setOrders(hydrated);
 
-      const productIds = mapped
+      const productIds = hydrated
         .flatMap((o) => o.items.map((i) => i.produk?.id_produk).filter(Boolean) as string[]);
       const reviewed = await returnService.getReviewedProductIds(user.id_user, productIds);
       setReviewedIds(new Set(reviewed));
@@ -164,7 +224,8 @@ export default function CustomerOrdersPage() {
 
   const canMarkComplete = (ord: Order) => {
     const isPickup = ord.pengiriman?.kurir === "Ambil di Toko";
-    return ord.stat_order === "dikirim" || (isPickup && ord.stat_order === "diproses");
+    if (isPickup) return false;
+    return ord.stat_order === "dikirim";
   };
 
   const handleCompleteOrder = async (orderId: string) => {
@@ -271,16 +332,14 @@ export default function CustomerOrdersPage() {
           ) : (
             returns.map((ret) => {
               const item = Array.isArray(ret.order_item) ? ret.order_item[0] : ret.order_item;
-              const produk = item?.produk
-                ? Array.isArray(item.produk) ? item.produk[0] : item.produk
-                : null;
+              const produk = normalizeProduk(item?.produk);
               return (
                 <div key={ret.id_retur} className="bg-white border border-surface-container rounded-xl p-6 shadow-sm">
                   <div className="flex flex-wrap justify-between items-start gap-4">
                     <div className="flex gap-4">
                       <div className="w-16 h-16 bg-surface-container rounded overflow-hidden shrink-0">
                         <img
-                          src={parseProductImg(produk?.cover_img || produk?.img)}
+                          src={getProductImageSrc(produk)}
                           alt={produk?.nama_produk ?? "Produk"}
                           className="w-full h-full object-cover"
                         />
@@ -351,7 +410,7 @@ export default function CustomerOrdersPage() {
                     <div className="flex items-center gap-4 flex-1">
                       <div className="w-16 h-16 bg-surface-container rounded overflow-hidden shrink-0">
                         <img
-                          src={parseProductImg(firstItem.produk?.cover_img || firstItem.produk?.img)}
+                          src={getProductImageSrc(firstItem.produk)}
                           alt={firstItem.produk?.nama_produk ?? "Produk"}
                           className="w-full h-full object-cover"
                         />
@@ -373,6 +432,17 @@ export default function CustomerOrdersPage() {
                             {ord.pengiriman.no_resi ? ` · ${ord.pengiriman.no_resi}` : ""}
                           </p>
                         )}
+                        {isPickup && (
+                          <a
+                            href={PICKUP_STORE_MAPS_URL}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 mt-1 px-2.5 py-1 border border-primary/30 text-primary font-bold text-[10px] rounded-md hover:bg-primary-container transition"
+                          >
+                            <MapPin size={11} />
+                            Buka Google Maps
+                          </a>
+                        )}
                       </div>
                     </div>
 
@@ -389,6 +459,12 @@ export default function CustomerOrdersPage() {
                           <Link href={`/account/orders/${ord.id_order}/chat`} className="px-4 py-2 border border-primary text-primary font-bold text-xs rounded hover:bg-primary-container transition">
                             Chat Pengiriman
                           </Link>
+                        )}
+
+                        {isPickup && ord.stat_order === "diproses" && (
+                          <span className="px-3 py-2 bg-amber-50 text-amber-800 border border-amber-200 font-bold text-xs rounded">
+                            Menunggu konfirmasi admin
+                          </span>
                         )}
 
                         {canMarkComplete(ord) && (

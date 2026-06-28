@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Mail, CheckCircle, ArrowLeft, Lock, Eye, EyeOff } from "lucide-react";
+import { Mail, CheckCircle, ArrowLeft } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { authService } from "@/backend/authService";
@@ -20,57 +20,25 @@ const C = {
 
 export default function LupaSandiPage() {
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [showPass, setShowPass] = useState(false);
-  const [showConfirmPass, setShowConfirmPass] = useState(false);
-  const [step, setStep] = useState(1); // 1: Email check, 2: New Password, 3: Success
+  const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
-  async function handleCheckEmail(e: React.FormEvent) {
+  async function handleSendResetEmail(e: React.FormEvent) {
     e.preventDefault();
     if (!email.trim()) return;
     setLoading(true);
     setErrorMsg("");
 
     try {
-      const exists = await authService.checkEmailExists(email);
-      if (exists) {
+      const ok = await authService.sendPasswordResetEmail(email);
+      if (ok) {
         setStep(2);
       } else {
-        setErrorMsg("Email tidak terdaftar! Silakan periksa kembali atau buat akun baru.");
+        setErrorMsg("Gagal mengirim email reset. Periksa alamat email atau coba lagi nanti.");
       }
-    } catch (err) {
+    } catch {
       setErrorMsg("Terjadi kesalahan. Silakan coba beberapa saat lagi.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleResetPassword(e: React.FormEvent) {
-    e.preventDefault();
-    if (!password.trim() || !confirmPassword.trim()) return;
-    if (password.length < 6) {
-      setErrorMsg("Kata sandi baru minimal 6 karakter.");
-      return;
-    }
-    if (password !== confirmPassword) {
-      setErrorMsg("Konfirmasi kata sandi tidak cocok!");
-      return;
-    }
-    setLoading(true);
-    setErrorMsg("");
-
-    try {
-      const success = await authService.resetPassword(email, password);
-      if (success) {
-        setStep(3);
-      } else {
-        setErrorMsg("Gagal memperbarui kata sandi. Silakan coba lagi.");
-      }
-    } catch (err) {
-      setErrorMsg("Terjadi kesalahan sistem. Silakan coba lagi.");
     } finally {
       setLoading(false);
     }
@@ -91,9 +59,9 @@ export default function LupaSandiPage() {
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 8 }}>
               {[
-                { num: "1", text: "Verifikasi alamat email Anda", active: step === 1 },
-                { num: "2", text: "Buat kata sandi baru yang kuat", active: step === 2 },
-                { num: "3", text: "Selesai! Masuk ke akun Anda", active: step === 3 },
+                { num: "1", text: "Masukkan email terdaftar", active: step === 1 },
+                { num: "2", text: "Cek inbox — klik link reset", active: step === 2 },
+                { num: "3", text: "Buat kata sandi baru di halaman reset", active: false },
               ].map((s) => (
                 <div key={s.num} style={{ display: "flex", alignItems: "flex-start", gap: 14, opacity: s.active ? 1 : 0.6 }}>
                   <div style={{
@@ -110,7 +78,7 @@ export default function LupaSandiPage() {
               ))}
             </div>
             <div style={{ marginTop: "auto", padding: "16px", background: "rgba(255,255,255,0.12)", borderRadius: 10 }}>
-              <p style={{ fontSize: "0.8rem", opacity: 0.8, margin: 0, lineHeight: 1.6 }}>🔒 Akun Anda diamankan menggunakan verifikasi database enkripsi aman.</p>
+              <p style={{ fontSize: "0.8rem", opacity: 0.8, margin: 0, lineHeight: 1.6 }}>🔒 Link reset dikirim lewat Supabase Auth ke email Anda.</p>
             </div>
           </div>
 
@@ -125,10 +93,10 @@ export default function LupaSandiPage() {
             {step === 1 && (
               <>
                 <div style={{ marginBottom: 32 }}>
-                  <h1 style={{ fontSize: "1.5rem", fontWeight: 800, color: C.text, margin: "0 0 8px 0" }}>Verifikasi Email</h1>
-                  <p style={{ fontSize: "0.875rem", color: C.textMuted, margin: 0 }}>Masukkan email Anda yang telah terdaftar.</p>
+                  <h1 style={{ fontSize: "1.5rem", fontWeight: 800, color: C.text, margin: "0 0 8px 0" }}>Reset Kata Sandi</h1>
+                  <p style={{ fontSize: "0.875rem", color: C.textMuted, margin: 0 }}>Kami akan kirim link reset ke email Anda.</p>
                 </div>
-                <form onSubmit={handleCheckEmail} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                <form onSubmit={handleSendResetEmail} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
                   <div>
                     <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 700, color: C.text, marginBottom: 8 }}>Alamat Email</label>
                     <div style={{ display: "flex", alignItems: "center", border: `1.5px solid ${C.borderStrong}`, borderRadius: 8, overflow: "hidden", background: "white", height: 48 }}>
@@ -144,7 +112,7 @@ export default function LupaSandiPage() {
                     </div>
                   </div>
                   <button type="submit" disabled={loading} style={{ width: "100%", height: 48, background: loading ? C.primaryDark : C.primary, color: "white", border: "none", borderRadius: 8, fontSize: "0.875rem", fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                    {loading ? "Memverifikasi..." : "CARI AKUN"}
+                    {loading ? "Mengirim..." : "KIRIM LINK RESET"}
                   </button>
                   <Link href="/masuk" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: "0.875rem", color: C.textSec, fontWeight: 600, textDecoration: "none", paddingTop: 4 }}>
                     <ArrowLeft size={15} /> Kembali ke halaman masuk
@@ -154,83 +122,18 @@ export default function LupaSandiPage() {
             )}
 
             {step === 2 && (
-              <>
-                <div style={{ marginBottom: 32 }}>
-                  <h1 style={{ fontSize: "1.5rem", fontWeight: 800, color: C.text, margin: "0 0 8px 0" }}>Kata Sandi Baru</h1>
-                  <p style={{ fontSize: "0.875rem", color: C.textMuted, margin: 0 }}>Masukkan kata sandi baru untuk <strong>{email}</strong>.</p>
-                </div>
-                <form onSubmit={handleResetPassword} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-                  {/* Password */}
-                  <div>
-                    <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 700, color: C.text, marginBottom: 8 }}>Kata Sandi Baru</label>
-                    <div style={{ display: "flex", alignItems: "center", border: `1.5px solid ${C.borderStrong}`, borderRadius: 8, overflow: "hidden", background: "white", height: 48 }}>
-                      <span style={{ padding: "0 14px", color: C.textMuted, display: "flex", alignItems: "center" }}><Lock size={16} /></span>
-                      <input
-                        type={showPass ? "text" : "password"}
-                        placeholder="••••••••"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        required
-                        style={{ flex: 1, border: "none", outline: "none", height: "100%", fontSize: "0.875rem", color: C.text, fontFamily: "inherit", background: "transparent" }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPass(!showPass)}
-                        style={{ padding: "0 14px", background: "none", border: "none", cursor: "pointer", color: C.textMuted, display: "flex", alignItems: "center", height: "100%" }}
-                      >
-                        {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
-                      </button>
-                    </div>
-                    {password.length > 0 && password.length < 6 && (
-                      <p style={{ fontSize: "0.75rem", color: "#DC2626", margin: "6px 0 0 0", fontWeight: 600 }}>
-                        Kata sandi baru minimal 6 karakter.
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Confirm Password */}
-                  <div>
-                    <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 700, color: C.text, marginBottom: 8 }}>Konfirmasi Kata Sandi Baru</label>
-                    <div style={{ display: "flex", alignItems: "center", border: `1.5px solid ${C.borderStrong}`, borderRadius: 8, overflow: "hidden", background: "white", height: 48 }}>
-                      <span style={{ padding: "0 14px", color: C.textMuted, display: "flex", alignItems: "center" }}><Lock size={16} /></span>
-                      <input
-                        type={showConfirmPass ? "text" : "password"}
-                        placeholder="••••••••"
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        required
-                        style={{ flex: 1, border: "none", outline: "none", height: "100%", fontSize: "0.875rem", color: C.text, fontFamily: "inherit", background: "transparent" }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowConfirmPass(!showConfirmPass)}
-                        style={{ padding: "0 14px", background: "none", border: "none", cursor: "pointer", color: C.textMuted, display: "flex", alignItems: "center", height: "100%" }}
-                      >
-                        {showConfirmPass ? <EyeOff size={16} /> : <Eye size={16} />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <button type="submit" disabled={loading} style={{ width: "100%", height: 48, background: loading ? C.primaryDark : C.primary, color: "white", border: "none", borderRadius: 8, fontSize: "0.875rem", fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
-                    {loading ? "Memproses..." : "RESET KATA SANDI"}
-                  </button>
-                </form>
-              </>
-            )}
-
-            {step === 3 && (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: 20 }}>
                 <div style={{ width: 72, height: 72, borderRadius: "50%", background: "#F0FDF4", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <CheckCircle size={36} color="#16A34A" strokeWidth={1.8} />
                 </div>
                 <div>
-                  <h2 style={{ fontSize: "1.375rem", fontWeight: 800, color: C.text, margin: "0 0 10px 0" }}>Kata Sandi Diubah!</h2>
+                  <h2 style={{ fontSize: "1.375rem", fontWeight: 800, color: C.text, margin: "0 0 10px 0" }}>Cek Email Anda</h2>
                   <p style={{ fontSize: "0.9rem", color: C.textSec, lineHeight: 1.65, margin: 0, maxWidth: 320 }}>
-                    Kata sandi untuk akun <strong style={{ color: C.text }}>{email}</strong> telah berhasil diperbarui. Silakan masuk kembali.
+                    Jika <strong style={{ color: C.text }}>{email}</strong> terdaftar, link reset kata sandi sudah dikirim. Buka inbox (dan folder spam), lalu klik link tersebut.
                   </p>
                 </div>
                 <Link href="/masuk" style={{ display: "flex", alignItems: "center", gap: 6, height: 48, width: "100%", background: C.primary, color: "white", borderRadius: 8, fontSize: "0.875rem", fontWeight: 700, textDecoration: "none", justifyContent: "center" }}>
-                  MASUK SEKARANG
+                  KEMBALI KE LOGIN
                 </Link>
               </div>
             )}

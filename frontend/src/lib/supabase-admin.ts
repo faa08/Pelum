@@ -23,9 +23,7 @@ export function createSupabaseAdmin(): {
   error: string | null;
 } {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || url.includes("placeholder") || !serviceKey) {
     return { client: null, error: "SUPABASE_SERVICE_ROLE_KEY belum diset di .env.local" };

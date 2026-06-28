@@ -2,9 +2,10 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { authService } from "@/backend/authService";
+import { DEFAULT_AVATAR, resolveAvatarUrl } from "@/lib/avatar";
 
 export default function CustomerProfilePage() {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<ReturnType<typeof authService.getCurrentUser>>(null);
   const [username, setUsername] = useState("");
   const [fullname, setFullname] = useState("");
   const [email, setEmail] = useState("");
@@ -12,7 +13,9 @@ export default function CustomerProfilePage() {
   const [storeName, setStoreName] = useState("");
   const [gender, setGender] = useState("");
   const [birthdate, setBirthdate] = useState("");
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string>(DEFAULT_AVATAR);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -26,34 +29,54 @@ export default function CustomerProfilePage() {
       setStoreName(currentUser.nama_toko || currentUser.username || "");
       setGender(currentUser.jenis_kelamin || "");
       setBirthdate(currentUser.tanggal_lahir || "");
-      setAvatarPreview(currentUser.avatar || null);
+      setAvatarUrl(resolveAvatarUrl(currentUser.avatar));
     }
   }, []);
 
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !user) return;
+
     if (file.size > 1 * 1024 * 1024) {
       alert("Ukuran gambar maksimal 1 MB.");
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => setAvatarPreview(reader.result as string);
-    reader.readAsDataURL(file);
+
+    const localPreview = URL.createObjectURL(file);
+    setAvatarUrl(localPreview);
+    setAvatarUploading(true);
+
+    try {
+      const uploadedUrl = await authService.uploadAvatar(file, user.id_user);
+      setAvatarUrl(uploadedUrl);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Gagal mengunggah foto profil.");
+      setAvatarUrl(resolveAvatarUrl(user.avatar));
+    } finally {
+      setAvatarUploading(false);
+      URL.revokeObjectURL(localPreview);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (user) {
-      const success = await authService.updateProfile(user.id_user, fullname, phone, {
-        username,
-        avatar: avatarPreview ?? user.avatar,
-      });
-      if (success) {
-        const updatedUser = authService.getCurrentUser();
-        setUser(updatedUser);
-        alert("Profil berhasil diperbarui!");
-      }
+    if (!user || avatarUploading) return;
+
+    setSaving(true);
+    const success = await authService.updateProfile(user.id_user, fullname, phone, {
+      username,
+      avatar: avatarUrl,
+    });
+    setSaving(false);
+
+    if (success) {
+      const updatedUser = authService.getCurrentUser();
+      setUser(updatedUser);
+      if (updatedUser) setAvatarUrl(resolveAvatarUrl(updatedUser.avatar));
+      alert("Profil berhasil diperbarui!");
+    } else {
+      alert("Gagal menyimpan profil. Coba lagi.");
     }
   };
 
@@ -65,15 +88,13 @@ export default function CustomerProfilePage() {
     );
   }
 
-  // Mask email: d.********@gmail.com
   const maskedEmail = email.replace(
     /^(.{1})(.*)(@.*)$/,
-    (_, first, middle, domain) => `${first}.${"*".repeat(8)}${domain}`
+    (_, first, _middle, domain) => `${first}.${"*".repeat(8)}${domain}`
   );
 
   return (
     <div className="bg-white border border-surface-container rounded-xl shadow-sm">
-      {/* Header */}
       <div className="px-8 pt-8 pb-4 border-b border-surface-container">
         <h2 className="font-headline font-bold text-xl text-on-surface">Profil Saya</h2>
         <p className="text-sm text-secondary mt-0.5">
@@ -83,10 +104,7 @@ export default function CustomerProfilePage() {
 
       <form onSubmit={handleSave}>
         <div className="flex flex-col md:flex-row">
-          {/* Left: Form */}
           <div className="flex-1 px-8 py-6 space-y-5">
-
-            {/* Username */}
             <div className="flex items-start gap-4">
               <label className="w-32 text-right text-sm text-on-surface pt-2 shrink-0">
                 Username
@@ -102,11 +120,8 @@ export default function CustomerProfilePage() {
               </div>
             </div>
 
-            {/* Nama */}
             <div className="flex items-center gap-4">
-              <label className="w-32 text-right text-sm text-on-surface shrink-0">
-                Nama
-              </label>
+              <label className="w-32 text-right text-sm text-on-surface shrink-0">Nama</label>
               <input
                 type="text"
                 value={fullname}
@@ -115,11 +130,8 @@ export default function CustomerProfilePage() {
               />
             </div>
 
-            {/* Email */}
             <div className="flex items-center gap-4">
-              <label className="w-32 text-right text-sm text-on-surface shrink-0">
-                Email
-              </label>
+              <label className="w-32 text-right text-sm text-on-surface shrink-0">Email</label>
               <div className="flex items-center gap-2 text-sm">
                 <span className="text-on-surface">{maskedEmail}</span>
                 <button type="button" className="text-primary text-sm hover:underline font-medium">
@@ -128,11 +140,8 @@ export default function CustomerProfilePage() {
               </div>
             </div>
 
-            {/* Nomor Telepon */}
             <div className="flex items-center gap-4">
-              <label className="w-32 text-right text-sm text-secondary shrink-0">
-                Nomor Telepon
-              </label>
+              <label className="w-32 text-right text-sm text-secondary shrink-0">Nomor Telepon</label>
               <div className="flex items-center gap-2 text-sm">
                 {phone ? (
                   <span className="text-on-surface">{phone}</span>
@@ -144,11 +153,8 @@ export default function CustomerProfilePage() {
               </div>
             </div>
 
-            {/* Nama Toko */}
             <div className="flex items-center gap-4">
-              <label className="w-32 text-right text-sm text-on-surface shrink-0">
-                Nama Toko
-              </label>
+              <label className="w-32 text-right text-sm text-on-surface shrink-0">Nama Toko</label>
               <input
                 type="text"
                 value={storeName}
@@ -157,11 +163,8 @@ export default function CustomerProfilePage() {
               />
             </div>
 
-            {/* Jenis Kelamin */}
             <div className="flex items-center gap-4">
-              <label className="w-32 text-right text-sm text-on-surface shrink-0">
-                Jenis Kelamin
-              </label>
+              <label className="w-32 text-right text-sm text-on-surface shrink-0">Jenis Kelamin</label>
               <div className="flex items-center gap-4 text-sm text-on-surface">
                 {["Laki-laki", "Perempuan", "Lainnya"].map((opt) => (
                   <label key={opt} className="flex items-center gap-1.5 cursor-pointer">
@@ -179,11 +182,13 @@ export default function CustomerProfilePage() {
               </div>
             </div>
 
-            {/* Tanggal Lahir */}
             <div className="flex items-center gap-4">
               <label className="w-32 text-right text-sm text-on-surface shrink-0 flex items-center justify-end gap-1">
                 Tanggal lahir
-                <span className="material-symbols-outlined text-[14px] text-secondary cursor-help" title="Tanggal lahir tidak dapat dilihat publik">
+                <span
+                  className="material-symbols-outlined text-[14px] text-secondary cursor-help"
+                  title="Tanggal lahir tidak dapat dilihat publik"
+                >
                   help
                 </span>
               </label>
@@ -196,36 +201,40 @@ export default function CustomerProfilePage() {
               </div>
             </div>
 
-            {/* Save Button */}
             <div className="flex items-center gap-4 pt-2">
               <div className="w-32 shrink-0" />
               <button
                 type="submit"
-                className="px-8 py-2.5 bg-primary text-white font-semibold text-sm rounded hover:brightness-95 transition"
+                disabled={saving || avatarUploading}
+                className="px-8 py-2.5 bg-primary text-white font-semibold text-sm rounded hover:brightness-95 transition disabled:opacity-60"
               >
-                Simpan
+                {saving ? "Menyimpan..." : "Simpan"}
               </button>
             </div>
           </div>
 
-          {/* Divider */}
           <div className="hidden md:block w-px bg-surface-container my-6" />
 
-          {/* Right: Avatar Upload */}
           <div className="flex flex-col items-center justify-start px-10 py-10 gap-4">
-            {/* Avatar Circle */}
-            <div className="w-24 h-24 rounded-full overflow-hidden border border-surface-container bg-zinc-200 flex items-center justify-center">
-              {avatarPreview ? (
-                <img src={avatarPreview} alt="Avatar" className="w-full h-full object-cover" />
-              ) : (
-                <span className="material-symbols-outlined text-[48px] text-zinc-400">person</span>
+            <div className="w-24 h-24 rounded-full overflow-hidden border border-surface-container bg-[#E8E8E8] flex items-center justify-center relative">
+              <img
+                src={avatarUrl}
+                alt="Avatar"
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.src = DEFAULT_AVATAR;
+                }}
+              />
+              {avatarUploading && (
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                  <span className="text-white text-[10px] font-bold">Upload...</span>
+                </div>
               )}
             </div>
 
-            {/* Upload Button */}
             <input
               type="file"
-              accept=".jpg,.jpeg,.png"
+              accept=".jpg,.jpeg,.png,image/jpeg,image/png"
               ref={fileInputRef}
               onChange={handleAvatarChange}
               className="hidden"
@@ -233,9 +242,10 @@ export default function CustomerProfilePage() {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="px-5 py-2 border border-surface-container rounded text-sm text-on-surface hover:bg-surface-container/50 transition"
+              disabled={avatarUploading}
+              className="px-5 py-2 border border-surface-container rounded text-sm text-on-surface hover:bg-surface-container/50 transition disabled:opacity-60"
             >
-              Pilih Gambar
+              {avatarUploading ? "Mengunggah..." : "Pilih Gambar"}
             </button>
 
             <div className="text-center text-xs text-secondary space-y-0.5">

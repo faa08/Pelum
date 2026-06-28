@@ -1,14 +1,42 @@
 "use client";
 
 import { useState } from "react";
-import { Globe, Share2, Mail } from "lucide-react";
+import { Mail, MapPin, Globe } from "lucide-react";
 import Link from "next/link";
+import {
+  CONTACT_EMAIL_MAILTO,
+  PELATARAN_INSTAGRAM_URL,
+  LINKPRODUCTIVE_INSTAGRAM_URL,
+  LINKPRODUCTIVE_YOUTUBE_URL,
+  LINKPRODUCTIVE_WEBSITE_URL,
+} from "@/lib/siteContact";
+import { PICKUP_STORE_ADDRESS, PICKUP_STORE_MAPS_URL } from "@/lib/checkoutConstants";
+
+function InstagramIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
+      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+      <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
+    </svg>
+  );
+}
+
+function YoutubeIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17" />
+      <path d="m10 15 5-3-5-3z" />
+    </svg>
+  );
+}
 
 const COMPANY_LINKS = [
   { label: "Tentang Kami", href: "/tentang" },
   { label: "Model Konsinyasi", href: "/bantuan/konsinyasi" },
   { label: "Hubungi Kami", href: "/kontak" },
   { label: "Kebijakan Privasi", href: "/kebijakan-privasi" },
+  { label: "Syarat & Ketentuan", href: "/bantuan/syarat-ketentuan" },
 ];
 
 const HELP_LINKS = [
@@ -25,11 +53,13 @@ interface FooterProps {
 
 export default function Footer({ isMinimalist = false }: FooterProps) {
   const [email, setEmail] = useState("");
+  const [newsletterSent, setNewsletterSent] = useState(false);
 
   if (isMinimalist) {
     return (
       <footer style={{ textAlign: "center", padding: "20px 0", fontSize: "0.75rem", color: "#8E8680", borderTop: "1px solid #EAE5E0", background: "white" }}>
-        © 2026 Pelataran UMKM Digital. Supporting local businesses.
+        <p>© {new Date().getFullYear()} Pelataran UMKM Digital. Supporting local businesses.</p>
+        <p style={{ marginTop: 6, opacity: 0.85 }}>Dikembangkan oleh PT Integrasi Produktivitas Indonesia</p>
       </footer>
     );
   }
@@ -50,14 +80,65 @@ export default function Footer({ isMinimalist = false }: FooterProps) {
             <p className="footer-desc-custom">
               Platform titip jual (konsinyasi) produk UMKM Indonesia. Kami urus penjualan, pembayaran, dan pengiriman — UMKM fokus pada karya terbaiknya.
             </p>
+            <div className="footer-location-custom">
+              <p className="footer-desc-custom">{PICKUP_STORE_ADDRESS}</p>
+              <a
+                href={PICKUP_STORE_MAPS_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="footer-maps-link"
+              >
+                <MapPin size={14} />
+                Buka di Google Maps
+              </a>
+            </div>
             <div className="footer-social-custom">
-              <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" className="social-btn-custom" aria-label="Instagram">
+              <a
+                href={LINKPRODUCTIVE_WEBSITE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="social-btn-custom"
+                aria-label="Website Link Productive"
+                title="linkproductive.com"
+              >
                 <Globe size={16} />
               </a>
-              <a href="#" className="social-btn-custom" aria-label="Share">
-                <Share2 size={16} />
+              <a
+                href={PELATARAN_INSTAGRAM_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="social-btn-custom"
+                aria-label="Instagram Pelataran UMKM"
+                title="Instagram Pelataran UMKM"
+              >
+                <InstagramIcon size={16} />
               </a>
-              <a href="mailto:hello@pelataran.id" className="social-btn-custom" aria-label="Email">
+              <a
+                href={LINKPRODUCTIVE_INSTAGRAM_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="social-btn-custom"
+                aria-label="Instagram Link Productive"
+                title="Instagram Link Productive"
+              >
+                <InstagramIcon size={16} />
+              </a>
+              <a
+                href={LINKPRODUCTIVE_YOUTUBE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="social-btn-custom"
+                aria-label="YouTube Link Productive"
+                title="YouTube Link Productive"
+              >
+                <YoutubeIcon size={16} />
+              </a>
+              <a
+                href={CONTACT_EMAIL_MAILTO}
+                className="social-btn-custom"
+                aria-label="Email Link Productive"
+                title="linkproductive@gmail.com"
+              >
                 <Mail size={16} />
               </a>
             </div>
@@ -97,9 +178,16 @@ export default function Footer({ isMinimalist = false }: FooterProps) {
               className="newsletter-form-custom"
               onSubmit={(e) => {
                 e.preventDefault();
+                if (email.trim()) setNewsletterSent(true);
                 setEmail("");
               }}
             >
+              {newsletterSent ? (
+                <p className="newsletter-text-custom" style={{ color: "#15803D", fontWeight: 600 }}>
+                  Terima kasih! Nantikan info terbaru di email Anda.
+                </p>
+              ) : (
+                <>
               <input
                 type="email"
                 placeholder="Email Anda"
@@ -112,6 +200,8 @@ export default function Footer({ isMinimalist = false }: FooterProps) {
               <button type="submit" className="newsletter-button-custom" id="newsletter-submit">
                 OK
               </button>
+                </>
+              )}
             </form>
           </div>
         </div>
@@ -119,7 +209,18 @@ export default function Footer({ isMinimalist = false }: FooterProps) {
         <div className="footer-divider-custom" />
         
         <div className="footer-bottom-custom">
-          <p>© 2024 Pelataran UMKM. Supporting local businesses.</p>
+          <p>© {new Date().getFullYear()} Pelataran UMKM. Supporting local businesses.</p>
+          <p className="footer-dev-credit">
+            Dikembangkan oleh{" "}
+            <a
+              href={LINKPRODUCTIVE_WEBSITE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-primary transition"
+            >
+              PT Integrasi Produktivitas Indonesia
+            </a>
+          </p>
         </div>
       </div>
     </footer>
