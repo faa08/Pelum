@@ -404,7 +404,7 @@ export default function CategoryPage({ params }: { params: Promise<{ slug?: stri
                     Belum Ada Produk
                   </h4>
                   <p style={{ fontSize: "0.875rem", color: C.textMuted, maxWidth: 300, margin: "0 0 20px 0", lineHeight: 1.5 }}>
-                    Kategori "{currentCategory.name}" saat ini belum memiliki produk terdaftar.
+                    Kategori &quot;{currentCategory.name}&quot; saat ini belum memiliki produk terdaftar.
                   </p>
                   <Link href="/kategori" style={{
                     background: C.primary,

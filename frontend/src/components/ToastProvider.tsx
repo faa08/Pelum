@@ -12,6 +12,10 @@ interface Toast {
 export default function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
+  const removeToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
   const addToast = useCallback((message: string, type?: "success" | "error" | "info") => {
     const id = Math.random().toString(36).substring(2, 9);
     
@@ -50,11 +54,7 @@ export default function ToastProvider({ children }: { children: React.ReactNode 
     setTimeout(() => {
       removeToast(id);
     }, 4500);
-  }, []);
-
-  const removeToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
+  }, [removeToast]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {

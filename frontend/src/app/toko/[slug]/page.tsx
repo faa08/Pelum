@@ -78,13 +78,6 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
   const [shopReviews, setShopReviews] = useState<{ id: string; user: string; rating: number; time: string; text: string }[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
 
-  useEffect(() => {
-    setCurrentUser(authService.getCurrentUser());
-    if (slug) {
-      loadStorefrontData();
-    }
-  }, [slug]);
-
   async function loadStorefrontData() {
     setLoading(true);
     try {
@@ -121,6 +114,13 @@ export default function StorefrontPage({ params }: { params: Promise<{ slug: str
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    setCurrentUser(authService.getCurrentUser());
+    if (slug) {
+      loadStorefrontData();
+    }
+  }, [slug]);
 
   async function handleFollowToggle() {
     if (!seller) return;

@@ -63,6 +63,14 @@ export default function AdminStoresPage() {
     setEditDrafts(edits);
   };
 
+  const showToast = (message: string, type: "info" | "error" | "success" = "info") => {
+    const id = Date.now();
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4000);
+  };
+
   const loadData = async () => {
     setIsLoading(true);
     try {
@@ -80,14 +88,6 @@ export default function AdminStoresPage() {
   useEffect(() => {
     loadData();
   }, []);
-
-  const showToast = (message: string, type: "info" | "error" | "success" = "info") => {
-    const id = Date.now();
-    setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4000);
-  };
 
   const handleDeleteStore = async (id: string, name: string) => {
     const confirmed = confirm(
