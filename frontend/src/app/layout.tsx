@@ -19,12 +19,16 @@ const jakarta = Plus_Jakarta_Sans({
    display: "swap",
  });
  
- export const metadata: Metadata = {
-   title: "Pelataran UMKM — Marketplace Produk Lokal Indonesia",
-   description:
-     "Temukan produk UMKM terbaik Indonesia: kuliner, kerajinan tangan, fashion lokal, dan jasa kreatif dari pengrajin lokal terpercaya.",
-   keywords: "UMKM, produk lokal, marketplace Indonesia, kerajinan tangan, batik, kopi arabika",
-   openGraph: {
+export const metadata: Metadata = {
+  title: "Pelataran UMKM — Marketplace Produk Lokal Indonesia",
+  description:
+    "Temukan produk UMKM terbaik Indonesia: kuliner, kerajinan tangan, fashion lokal, dan jasa kreatif dari pengrajin lokal terpercaya.",
+  keywords: "UMKM, produk lokal, marketplace Indonesia, kerajinan tangan, batik, kopi arabika",
+  icons: {
+    icon: [{ url: "/favicon.png", type: "image/png" }],
+    apple: "/apple-touch-icon.png",
+  },
+  openGraph: {
      title: "Pelataran UMKM — Marketplace Produk Lokal Indonesia",
      description: "Platform e-commerce khusus UMKM Indonesia",
      type: "website",
