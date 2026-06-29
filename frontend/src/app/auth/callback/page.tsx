@@ -69,10 +69,14 @@ export default function AuthCallbackPage() {
 
         authService.setCurrentUser(data.user);
 
+        if (typeof window !== "undefined") {
+          localStorage.setItem("pelum-auth-verified", String(Date.now()));
+        }
+
         if (data.user.role === "admin") {
-          router.push("/admin/dashboard");
+          router.replace("/admin/dashboard");
         } else {
-          router.push("/account/profile");
+          router.replace("/account/profile");
         }
       } catch (err) {
         console.error("Auth callback failed:", err);

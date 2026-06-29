@@ -105,6 +105,7 @@ export default function ResetPasswordPage() {
                 <div style={{ position: "relative", marginTop: 6 }}>
                   <Lock size={16} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: C.textMuted }} />
                   <input
+                    className="auth-password-input"
                     type={showPass ? "text" : "password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -123,6 +124,7 @@ export default function ResetPasswordPage() {
               <div>
                 <label style={{ fontSize: "0.75rem", fontWeight: 700, color: C.textMuted }}>Konfirmasi kata sandi</label>
                 <input
+                  className="auth-password-input"
                   type={showPass ? "text" : "password"}
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}

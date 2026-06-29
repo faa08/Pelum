@@ -201,6 +201,7 @@ function LoginForm() {
                     <Lock size={16} />
                   </span>
                   <input
+                    className="auth-password-input"
                     type={showPass ? "text" : "password"}
                     placeholder="••••••••"
                     value={password}

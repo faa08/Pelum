@@ -9,8 +9,6 @@ export default function CustomerProfilePage() {
   const [username, setUsername] = useState("");
   const [fullname, setFullname] = useState("");
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [storeName, setStoreName] = useState("");
   const [gender, setGender] = useState("");
   const [birthdate, setBirthdate] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string>(DEFAULT_AVATAR);
@@ -25,8 +23,6 @@ export default function CustomerProfilePage() {
       setUsername(currentUser.username || "");
       setFullname(currentUser.nama_lengkap || "");
       setEmail(currentUser.email || "");
-      setPhone(currentUser.no_telp || "");
-      setStoreName(currentUser.nama_toko || currentUser.username || "");
       setGender(currentUser.jenis_kelamin || "");
       setBirthdate(currentUser.tanggal_lahir || "");
       setAvatarUrl(resolveAvatarUrl(currentUser.avatar));
@@ -64,7 +60,7 @@ export default function CustomerProfilePage() {
     if (!user || avatarUploading) return;
 
     setSaving(true);
-    const success = await authService.updateProfile(user.id_user, fullname, phone, {
+    const success = await authService.updateProfile(user.id_user, fullname, user.no_telp || "", {
       username,
       avatar: avatarUrl,
     });
@@ -138,29 +134,6 @@ export default function CustomerProfilePage() {
                   Ubah
                 </button>
               </div>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <label className="w-32 text-right text-sm text-secondary shrink-0">Nomor Telepon</label>
-              <div className="flex items-center gap-2 text-sm">
-                {phone ? (
-                  <span className="text-on-surface">{phone}</span>
-                ) : (
-                  <button type="button" className="text-primary text-sm hover:underline font-medium">
-                    Tambah
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <label className="w-32 text-right text-sm text-on-surface shrink-0">Nama Toko</label>
-              <input
-                type="text"
-                value={storeName}
-                onChange={(e) => setStoreName(e.target.value)}
-                className="w-full max-w-sm px-3 py-2 border border-surface-container rounded text-sm text-on-surface focus:outline-none focus:border-primary"
-              />
             </div>
 
             <div className="flex items-center gap-4">

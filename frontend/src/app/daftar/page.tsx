@@ -1,14 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Mail, Lock, Eye, EyeOff, User, Users, Grid } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, User, Phone } from "lucide-react";
 
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { authService } from "@/backend/authService";
+import { supabase } from "@/backend/supabase";
 import { formatUnknownError } from "@/lib/formatError";
 
 const C = {
@@ -27,6 +28,7 @@ export default function RegisterPage() {
   const [showPass, setShowPass] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [agreed, setAgreed] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -34,6 +36,41 @@ export default function RegisterPage() {
   const [successMsg, setSuccessMsg] = useState("");
   const [pendingVerifyEmail, setPendingVerifyEmail] = useState("");
   const [resending, setResending] = useState(false);
+
+  // Setelah klik link verifikasi di email (tab baru), session tersimpan di browser
+  // — tab daftar ini ikut mendeteksi dan redirect ke profil.
+  useEffect(() => {
+    if (!pendingVerifyEmail) return;
+
+    const finishIfVerified = async () => {
+      const profile = await authService.refreshSession();
+      if (profile?.email?.toLowerCase() === pendingVerifyEmail.toLowerCase()) {
+        setSuccessMsg("Email terverifikasi! Mengalihkan ke profil Anda...");
+        router.replace("/account/profile");
+      }
+    };
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+        void finishIfVerified();
+      }
+    });
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key?.includes("supabase") || e.key === "pelum-auth-verified") {
+        void finishIfVerified();
+      }
+    };
+    window.addEventListener("storage", onStorage);
+
+    const interval = setInterval(() => void finishIfVerified(), 2500);
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener("storage", onStorage);
+      clearInterval(interval);
+    };
+  }, [pendingVerifyEmail, router]);
 
   const generateUsername = (fullName: string): string => {
     const base = fullName
@@ -51,16 +88,21 @@ export default function RegisterPage() {
     setSuccessMsg("");
 
     // Basic validations
-    if (!name.trim()) {
-      setErrorMsg("Nama lengkap wajib diisi.");
+    if (!name.trim() || name.trim().length < 2) {
+      setErrorMsg("Nama lengkap minimal 2 karakter.");
       return;
     }
     if (!email.trim()) {
       setErrorMsg("Alamat email wajib diisi.");
       return;
     }
-    if (password.length < 6) {
-      setErrorMsg("Kata sandi minimal 6 karakter.");
+    const phoneDigits = phone.replace(/\D/g, "");
+    if (phoneDigits.length < 10 || phoneDigits.length > 15) {
+      setErrorMsg("Nomor telepon wajib diisi (10–15 digit).");
+      return;
+    }
+    if (password.length < 8) {
+      setErrorMsg("Kata sandi minimal 8 karakter.");
       return;
     }
 
@@ -68,12 +110,20 @@ export default function RegisterPage() {
 
     try {
       const username = generateUsername(name);
-      const result = await authService.register(username, email, "", password);
+      const result = await authService.register(
+        username,
+        email,
+        phone.trim(),
+        password,
+        undefined,
+        name.trim()
+      );
 
       if (result.needsEmailVerification) {
         setPendingVerifyEmail(result.email);
         setSuccessMsg(
-          `Pendaftaran berhasil! Kami kirim link verifikasi ke ${result.email}. Buka inbox (dan folder spam) lalu klik link sebelum masuk.`
+          result.notice ||
+            `Pendaftaran berhasil! Link verifikasi dikirim ke ${result.email}. Buka email lalu klik linknya (biasanya membuka tab baru — itu normal). Tab ini akan otomatis masuk setelah verifikasi.`
         );
         return;
       }
@@ -84,9 +134,10 @@ export default function RegisterPage() {
         setTimeout(() => {
           router.push("/account/profile");
         }, 800);
-      } else {
-        setErrorMsg("Pendaftaran gagal. Silakan coba lagi.");
+        return;
       }
+
+      setErrorMsg("Pendaftaran gagal. Silakan coba lagi.");
     } catch (err: unknown) {
       setErrorMsg(formatUnknownError(err, "Pendaftaran gagal. Silakan coba lagi."));
     } finally {
@@ -125,20 +176,6 @@ export default function RegisterPage() {
               <p style={{ fontSize: "0.875rem", color: C.textSec, lineHeight: 1.6, margin: 0 }}>
                 Platform digital terpadu untuk menghubungkan produk unggulan UMKM Indonesia dengan pembeli di seluruh nusantara.
               </p>
-            </div>
-
-            {/* Stats Cards */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              {[
-                { icon: <Users size={18} color={C.textSec} />, value: "15k+", label: "Pelaku UMKM" },
-                { icon: <Grid size={18} color={C.textSec} />, value: "500+", label: "Kategori Produk" },
-              ].map((s, i) => (
-                <div key={i} style={{ background: "white", border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 4 }}>
-                  {s.icon}
-                  <p style={{ fontSize: "1.1rem", fontWeight: 800, color: C.text, margin: 0 }}>{s.value}</p>
-                  <p style={{ fontSize: "0.7rem", color: C.textMuted, margin: 0 }}>{s.label}</p>
-                </div>
-              ))}
             </div>
 
             {/* UMKM Photo */}
@@ -255,6 +292,27 @@ export default function RegisterPage() {
                 </div>
               </div>
 
+              {/* Nomor Telepon */}
+              <div>
+                <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 700, color: C.text, marginBottom: 8 }}>
+                  Nomor Telepon
+                </label>
+                <div style={{ display: "flex", alignItems: "center", border: `1.5px solid ${C.borderStrong}`, borderRadius: 8, overflow: "hidden", background: "white", height: 48 }}>
+                  <span style={{ padding: "0 14px", color: C.textMuted, display: "flex", alignItems: "center" }}>
+                    <Phone size={16} />
+                  </span>
+                  <input
+                    type="tel"
+                    placeholder="08xxxxxxxxxx"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    required
+                    disabled={loading}
+                    style={{ flex: 1, border: "none", outline: "none", height: "100%", fontSize: "0.875rem", color: C.text, fontFamily: "inherit", background: "transparent" }}
+                  />
+                </div>
+              </div>
+
               {/* Password */}
               <div>
                 <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 700, color: C.text, marginBottom: 8 }}>
@@ -265,8 +323,9 @@ export default function RegisterPage() {
                     <Lock size={16} />
                   </span>
                   <input
+                    className="auth-password-input"
                     type={showPass ? "text" : "password"}
-                    placeholder="Minimal 6 karakter"
+                    placeholder="Minimal 8 karakter"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
@@ -281,9 +340,9 @@ export default function RegisterPage() {
                     {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
-                {password.length > 0 && password.length < 6 && (
+                {password.length > 0 && password.length < 8 && (
                   <p style={{ fontSize: "0.75rem", color: "#DC2626", margin: "6px 0 0 0", fontWeight: 600 }}>
-                    Kata sandi minimal 6 karakter.
+                    Kata sandi minimal 8 karakter.
                   </p>
                 )}
               </div>

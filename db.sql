@@ -225,8 +225,8 @@ CREATE TABLE cart_item (
 -- ============================================================
 CREATE TABLE "order" (
     id_order        UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    id_user         UUID NOT NULL REFERENCES users(id_user) ON DELETE SET NULL,
-    id_seller       UUID NOT NULL REFERENCES seller(id_seller) ON DELETE SET NULL,
+    id_user         UUID NOT NULL REFERENCES users(id_user) ON DELETE CASCADE,
+    id_seller       UUID NOT NULL REFERENCES seller(id_seller) ON DELETE CASCADE,
     id_alamat       UUID REFERENCES alamat(id_alamat) ON DELETE SET NULL,
     total_hrg       NUMERIC(15, 2) NOT NULL CHECK (total_hrg >= 0),
     ongkir          NUMERIC(15, 2) DEFAULT 0,        -- ongkos kirim
@@ -1142,6 +1142,17 @@ CREATE POLICY "Admin manage produk"
     ON produk FOR ALL
     USING (public.is_app_admin())
     WITH CHECK (public.is_app_admin());
+
+-- Fix: order.id_user / id_seller NOT NULL tidak boleh ON DELETE SET NULL
+ALTER TABLE "order" DROP CONSTRAINT IF EXISTS order_id_user_fkey;
+ALTER TABLE "order"
+    ADD CONSTRAINT order_id_user_fkey
+    FOREIGN KEY (id_user) REFERENCES users(id_user) ON DELETE CASCADE;
+
+ALTER TABLE "order" DROP CONSTRAINT IF EXISTS order_id_seller_fkey;
+ALTER TABLE "order"
+    ADD CONSTRAINT order_id_seller_fkey
+    FOREIGN KEY (id_seller) REFERENCES seller(id_seller) ON DELETE CASCADE;
 
 NOTIFY pgrst, 'reload schema';
 

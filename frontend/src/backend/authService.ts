@@ -46,7 +46,7 @@ export type LoginResult = { user: User | null; error?: LoginError };
 
 export type RegisterResult =
   | { user: User; needsEmailVerification: false }
-  | { user: null; needsEmailVerification: true; email: string };
+  | { user: null; needsEmailVerification: true; email: string; notice?: string };
 
 async function fetchProfileFromDb(email: string, authId: string): Promise<User | null> {
   const { data: byEmail } = await supabase
@@ -243,9 +243,11 @@ export const authService = {
     email: string,
     no_telp: string,
     password?: string,
-    tanggal_lahir?: string
+    tanggal_lahir?: string,
+    nama_lengkap?: string
   ): Promise<RegisterResult> {
     const normalizedEmail = email.trim().toLowerCase();
+    const displayName = nama_lengkap?.trim() || username;
 
     if (isPlaceholder()) {
       const newUser: User = {
@@ -255,7 +257,7 @@ export const authService = {
             : `u-${Math.random().toString(36).substr(2, 9)}`,
         username,
         email: normalizedEmail,
-        nama_lengkap: username,
+        nama_lengkap: displayName,
         no_telp,
         avatar: DEFAULT_AVATAR,
         role: "customer",
@@ -269,50 +271,57 @@ export const authService = {
       return { user: newUser, needsEmailVerification: false };
     }
 
-    if (!password || password.length < 6) {
-      throw new Error("Kata sandi minimal 6 karakter.");
+    if (!password || password.length < 8) {
+      throw new Error("Kata sandi minimal 8 karakter.");
     }
 
-    const origin = authRedirectOrigin();
-    const redirectTo = origin ? `${origin}/auth/callback` : undefined;
-
-    const { data, error } = await supabase.auth.signUp({
-      email: normalizedEmail,
-      password,
-      options: {
-        ...(redirectTo ? { emailRedirectTo: redirectTo } : {}),
-        data: {
-          username,
-          nama_lengkap: username,
-          no_telp,
-          tanggal_lahir,
-        },
-      },
-    });
-
-    if (error) {
-      throw new Error(formatSupabaseAuthError(error));
-    }
-
-    const identities = data.user?.identities;
-    if (data.user && (!identities || identities.length === 0)) {
-      throw new Error("Email sudah terdaftar! Silakan masuk atau gunakan email lain.");
-    }
-
-    if (data.session?.user) {
-      const profile = await syncProfileFromSession(data.session.access_token, {
+    const res = await fetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: normalizedEmail,
+        password,
         username,
-        nama_lengkap: username,
+        nama_lengkap: displayName,
         no_telp,
         tanggal_lahir,
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      throw new Error(
+        typeof data.error === "string" && data.error
+          ? data.error
+          : formatSupabaseAuthError(data)
+      );
+    }
+
+    if (data.session?.access_token && data.session?.refresh_token) {
+      const { error: sessionErr } = await supabase.auth.setSession({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
       });
-      if (profile) {
-        this.setCurrentUser(profile);
-        return { user: profile, needsEmailVerification: false };
+      if (sessionErr) {
+        console.error("setSession after register:", sessionErr.message);
+      }
+      if (data.user) {
+        this.setCurrentUser(data.user as User);
+        return { user: data.user as User, needsEmailVerification: false };
       }
     }
 
-    return { user: null, needsEmailVerification: true, email: normalizedEmail };
+    if (data.needsEmailVerification) {
+      return {
+        user: null,
+        needsEmailVerification: true,
+        email: normalizedEmail,
+        notice: typeof data.notice === "string" ? data.notice : undefined,
+      };
+    }
+
+    throw new Error("Pendaftaran gagal. Respons server tidak lengkap.");
   },
 
   async resendVerificationEmail(email: string): Promise<{ ok: boolean; error?: string }> {

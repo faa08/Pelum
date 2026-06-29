@@ -2481,6 +2481,20 @@
   flex: 1;
 }
 
+/* Sembunyikan ikon mata bawaan browser — pakai tombol Eye custom saja */
+.auth-split-card input[type="password"]::-ms-reveal,
+.auth-split-card input[type="password"]::-ms-clear,
+.auth-password-input::-ms-reveal,
+.auth-password-input::-ms-clear {
+  display: none;
+}
+
+.auth-split-card input[type="password"]::-webkit-textfield-decoration-container,
+.auth-password-input::-webkit-textfield-decoration-container {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .checkout-order-row {
   display: flex;
   gap: 16px;

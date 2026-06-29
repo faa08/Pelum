@@ -20,16 +20,9 @@ export default function CustomerSecurityPage() {
   const [passLoading, setPassLoading] = useState(false);
   const [passMsg, setPassMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
-  // Phone change
-  const [showPhoneForm, setShowPhoneForm] = useState(false);
-  const [newPhone, setNewPhone] = useState("");
-  const [phoneLoading, setPhoneLoading] = useState(false);
-  const [phoneMsg, setPhoneMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
-
   useEffect(() => {
     const u = authService.getCurrentUser();
     setUser(u);
-    if (u) setNewPhone(u.no_telp || "");
   }, []);
 
   const handlePasswordChange = async (e: React.FormEvent) => {
@@ -65,28 +58,6 @@ export default function CustomerSecurityPage() {
     setPassLoading(false);
   };
 
-  const handlePhoneChange = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setPhoneMsg(null);
-    if (!newPhone.match(/^[+0-9\s]{8,}$/)) {
-      setPhoneMsg({ type: "err", text: "Nomor telepon tidak valid." });
-      return;
-    }
-    setPhoneLoading(true);
-
-    if (!user) { setPhoneLoading(false); return; }
-
-    const success = await authService.updateProfile(user.id_user, user.nama_lengkap, newPhone);
-    if (success) {
-      setUser(authService.getCurrentUser());
-      setPhoneMsg({ type: "ok", text: "Nomor telepon berhasil diperbarui." });
-      setShowPhoneForm(false);
-    } else {
-      setPhoneMsg({ type: "err", text: "Gagal memperbarui nomor telepon." });
-    }
-    setPhoneLoading(false);
-  };
-
   const handleDeleteAccount = async () => {
     const confirmText = prompt("Ketik HAPUS untuk mengonfirmasi penghapusan akun Anda secara permanen:");
     if (confirmText !== "HAPUS") {
@@ -105,10 +76,6 @@ export default function CustomerSecurityPage() {
   const maskedEmail = user?.email
     ? user.email.replace(/^(.{1})(.*)(@.*)$/, (_, f, m, d) => `${f}.${"*".repeat(8)}${d}`)
     : "–";
-
-  const maskedPhone = user?.no_telp
-    ? user.no_telp.replace(/(\d{4})(\d+)(\d{4})/, "$1 **** $3")
-    : null;
 
   return (
     <div className="space-y-8">
@@ -192,45 +159,6 @@ export default function CustomerSecurityPage() {
               <span className="bg-green-50 text-green-700 border border-green-200 text-[10px] font-bold px-2 py-0.5 rounded">
                 Terverifikasi
               </span>
-            </div>
-
-            {/* Nomor Telepon */}
-            <div className="border-t border-surface-container pt-3">
-              {phoneMsg && (
-                <p className={`text-xs font-semibold px-3 py-2 rounded mb-2 ${phoneMsg.type === "ok" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}>
-                  {phoneMsg.text}
-                </p>
-              )}
-              {showPhoneForm ? (
-                <form onSubmit={handlePhoneChange} className="space-y-2">
-                  <div className="space-y-1">
-                    <label className="font-bold text-secondary uppercase tracking-wider text-[10px]">Nomor Telepon Baru</label>
-                    <input type="tel" required value={newPhone} onChange={(e) => setNewPhone(e.target.value)}
-                      placeholder="+62 8xxx"
-                      className="w-full px-3 py-2 border border-surface-container rounded text-sm focus:outline-none focus:border-primary" />
-                  </div>
-                  <div className="flex gap-2">
-                    <button type="button" onClick={() => { setShowPhoneForm(false); setPhoneMsg(null); }}
-                      className="flex-1 py-1.5 border border-surface-container text-secondary font-bold text-xs rounded hover:bg-surface-container transition">
-                      Batal
-                    </button>
-                    <button type="submit" disabled={phoneLoading}
-                      className="flex-1 py-1.5 bg-primary text-white font-bold text-xs rounded hover:brightness-95 transition disabled:opacity-60">
-                      {phoneLoading ? "Menyimpan..." : "Simpan"}
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <div className="flex justify-between items-center">
-                  <div>
-                    <p className="font-bold text-secondary">Nomor Telepon</p>
-                    <p className="font-semibold text-on-surface">{maskedPhone ?? "Belum ditambahkan"}</p>
-                  </div>
-                  <button onClick={() => setShowPhoneForm(true)} className="text-primary font-bold hover:underline text-xs">
-                    {user?.no_telp ? "Ubah" : "Tambah"}
-                  </button>
-                </div>
-              )}
             </div>
           </div>
         </section>
