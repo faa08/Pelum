@@ -47,17 +47,11 @@ export async function POST(request: NextRequest) {
     (meta.name as string) ||
     email.split("@")[0];
 
-  const { data: byEmail } = await admin
-    .from("users")
-    .select("*")
-    .ilike("email", email)
-    .maybeSingle();
-
-  const { data: byAuthId } = await admin
-    .from("users")
-    .select("*")
-    .eq("id_user", authUser.id)
-    .maybeSingle();
+  // Run both lookups in parallel for speed
+  const [{ data: byEmail }, { data: byAuthId }] = await Promise.all([
+    admin.from("users").select("*").ilike("email", email).maybeSingle(),
+    admin.from("users").select("*").eq("id_user", authUser.id).maybeSingle(),
+  ]);
 
   const existing = byEmail || byAuthId;
 

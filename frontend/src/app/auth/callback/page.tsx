@@ -29,22 +29,29 @@ export default function AuthCallbackPage() {
           return;
         }
 
+        let session = null;
         const code = searchParams.get("code");
         if (code) {
-          const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+          const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
           if (exchangeError) {
             console.error("Code exchange failed:", exchangeError);
             router.push("/masuk?error=oauth_failed");
             return;
           }
+          session = data.session;
         }
 
-        const {
-          data: { session },
-          error,
-        } = await supabase.auth.getSession();
+        // Only call getSession if we didn't get one from code exchange
+        if (!session) {
+          const { data: { session: existingSession }, error } = await supabase.auth.getSession();
+          if (error || !existingSession?.user?.email) {
+            router.push("/masuk?error=oauth_failed");
+            return;
+          }
+          session = existingSession;
+        }
 
-        if (error || !session?.user?.email) {
+        if (!session?.user?.email) {
           router.push("/masuk?error=oauth_failed");
           return;
         }

@@ -49,20 +49,13 @@ export type RegisterResult =
   | { user: null; needsEmailVerification: true; email: string; notice?: string };
 
 async function fetchProfileFromDb(email: string, authId: string): Promise<User | null> {
-  const { data: byEmail } = await supabase
-    .from("users")
-    .select("*")
-    .ilike("email", email.trim().toLowerCase())
-    .maybeSingle();
+  // Run both lookups in parallel for speed
+  const [{ data: byEmail }, { data: byId }] = await Promise.all([
+    supabase.from("users").select("*").ilike("email", email.trim().toLowerCase()).maybeSingle(),
+    supabase.from("users").select("*").eq("id_user", authId).maybeSingle(),
+  ]);
 
   if (byEmail) return mapRowToUser(byEmail);
-
-  const { data: byId } = await supabase
-    .from("users")
-    .select("*")
-    .eq("id_user", authId)
-    .maybeSingle();
-
   if (byId) return mapRowToUser(byId);
   return null;
 }
